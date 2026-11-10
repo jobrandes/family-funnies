@@ -1,6 +1,6 @@
 # Staged standalone production
 
-The original Site and its daily automation prompts remain unchanged. Standalone production is paused pending owner-authorized cutover. Do not generate duplicate episodes or switch schedules just because this connection is installed.
+Parallel delivery is authorized. The existing daily comic task generates once on the original Site and mirrors each saved episode into the standalone app. Original Site production, guest-reader delivery and cadence remain active. Standalone independent generation remains paused to prevent duplicates. The updated automation contains exact source/destination family mappings and the complete single-use transfer procedure. Every run must catch up missing archived episodes even if generation is skipped.
 
 ## Working connection
 
@@ -26,6 +26,6 @@ Use built-in image generation, inspect the saved approved cast and relevant priv
 
 Live PNG upload/download matched byte-for-byte. Replayed capability and unauthenticated request both returned 401. SQL transaction tests passed paused-production rejection, duplicate claim rejection, forged claim rejection, valid completion and duplicate episode rejection; all test episode changes rolled back. Anonymous and ordinary authenticated clients cannot execute runner_command or consume_media_permit. The temporary migration importer remains disabled.
 
-## Before cutover
+## Independent generation cutover
 
-Update the existing daily cast and comic automation prompts to use this runbook and the standalone data, preserving existing cadence and all humor/likeness requirements. Enable only manager-approved family series through enable_production. Do not switch until the owner requests it. Existing old-site reader links still depend on the original Site; their continued updates need a separately verified mirror before old production is retired.
+Daily comic delivery already mirrors original episodes into the standalone app. Profiles and cast edits are not bidirectionally synchronized; use the original Site for production inputs during this overlap. To later move independent generation to the standalone app, update the existing daily cast and comic automation prompts to use standalone data, preserving cadence and all humor/likeness requirements. Enable only manager-approved family series through enable_production. Do not switch until the owner requests it. Existing old-site reader links still depend on the original Site; their continued updates need a separately verified mirror before old production is retired.
