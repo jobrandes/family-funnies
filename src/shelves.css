@@ -1,0 +1,31 @@
+/* Preserve the illustrated family shelves from the original app. */
+:root{background:#fbf5e9;color:#42233b}
+header{max-width:1240px;padding:26px 36px}
+main{max-width:1160px;padding:38px 32px 70px}
+.shelves-welcome{text-align:center;padding:12px 0 36px}
+.shelves-welcome h1{margin:15px 0;font:700 clamp(38px,5vw,64px)/1.05 Georgia,serif;letter-spacing:normal}
+.shelves-welcome h1 i{color:#a75036}
+.shelves-welcome p{color:#746356;font-size:18px}
+.shelves-welcome .eyebrow{font-size:10px}
+.shelves-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:30px;max-width:980px;margin:auto}
+.family-shelf{min-width:0;background:#fffaf2;border:1px solid #d8c8b8;border-radius:18px;overflow:hidden;box-shadow:0 5px #e8ddcd}
+button.shelf-art{display:block;width:100%;aspect-ratio:1.9;padding:0;border:0;border-bottom:1px solid #d8c8b8;border-radius:0;background:#f0e4cf;color:#8d7866;overflow:hidden}
+.shelf-art img{object-fit:cover;object-position:center 39%;width:100%;height:100%;transition:transform .25s}
+.shelf-art:hover img{transform:scale(1.025)}
+.shelf-art>p{padding:24px}
+.shelf-art-placeholder{display:flex;height:100%;flex-direction:column;justify-content:center;align-items:center;gap:12px;font-weight:400}
+.shelf-art-placeholder>span{font-size:50px}
+.shelf-card-body{display:flex;flex-direction:column;align-items:stretch;text-align:center;padding:24px}
+.shelf-card-body h2{margin:0 0 8px;font:700 31px Georgia,serif;letter-spacing:normal;overflow-wrap:anywhere}
+.shelf-members{color:#77675a;min-height:44px;margin:0 0 16px;overflow-wrap:anywhere}
+.shelf-badge{align-self:center;color:#58613d;background:#e9e9d4;border-radius:20px;padding:6px 12px;font-size:13px}
+.shelf-badge.new{color:white;background:#758447}
+.shelf-latest{min-height:26px;margin:20px 0}
+.shelf-card-body>button{width:100%;padding:13px;margin-bottom:10px;background:#b95332}
+button.secondary{color:#42233b;background:transparent;border:1px solid #7a4c4f;border-radius:9px;padding:11px}
+.shelf-card-body>button.secondary{margin-bottom:0}
+.shelf-create{text-align:center;margin-top:36px}
+.shelf-create>button{width:260px;max-width:100%;border-color:#a66a51}
+.shelf-create p{color:#78695c;margin-top:20px;font-size:14px}
+@media(max-width:700px){header{padding:18px;gap:12px}.brand{font-size:19px}header>.quiet{flex:none;padding:10px 8px}main{padding:20px 16px 44px}.shelves-grid{grid-template-columns:1fr;gap:25px;max-width:460px}.shelves-welcome{padding-top:6px}.shelves-welcome h1{font-size:43px}.shelves-welcome p{font-size:16px}.shelves-welcome .eyebrow{font-size:10px}.shelf-card-body h2{font-size:29px}}
+@media(prefers-reduced-motion:reduce){.shelf-art img{transition:none}}

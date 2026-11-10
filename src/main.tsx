@@ -3,6 +3,7 @@ import {createRoot} from 'react-dom/client';
 import {createUserWithEmailAndPassword,signInWithEmailAndPassword,sendEmailVerification,sendPasswordResetEmail,onAuthStateChanged,signOut,type User} from 'firebase/auth';
 import {auth,db,configured,rows,rpc,signedImage,firebaseProjectId} from './client';
 import './style.css';
+import './shelves.css';
 type Row=Record<string,any>;
 const errorText=(e:unknown)=>e instanceof Error?e.message:typeof e==='object'&&e&&'message'in e?String(e.message):'Something went wrong. Please try again.';
 const inviteToken=()=>new URLSearchParams(location.hash.slice(1)).get('invite');
@@ -20,9 +21,10 @@ function App(){
  {error&&<div className="notice error" role="alert">{error}<div>{user?.emailVerified&&<button className="quiet" disabled={busy} onClick={()=>void act(refresh)}>Refresh</button>}<button className="quiet" onClick={()=>setError('')} aria-label="Dismiss error">×</button></div></div>}
  {loading?<p role="status">Opening your collection…</p>:!configured?<section className="welcome"><p className="eyebrow">A new home for your family stories</p><h1>Every family has<br/>a funny side.</h1><p>Your private comic bookshelf is taking shape. Account setup is still being connected; this version is not open for sign-ups yet.</p><div className="paper"><strong>Your existing comics are safe.</strong><p>Keep using your current family links while we finish connecting this new app.</p></div></section>:!user?<Login busy={busy} run={act}/>:!user.emailVerified?<section className="narrow paper"><p className="eyebrow">One quick check</p><h1>Check your email.</h1><p>Verify {user.email} to open your families.</p><button disabled={busy} onClick={()=>void act(async()=>{await user.reload();if(!auth!.currentUser!.emailVerified)throw new Error('The verification has not arrived yet. Open the link in your email, then try again.');setUser(Object.assign(Object.create(Object.getPrototypeOf(user)),user));})}>I’ve verified my email</button><button className="quiet" disabled={busy} onClick={()=>void act(async()=>{await sendEmailVerification(user)})}>Resend verification</button></section>:<>
  {inviteToken()&&<section className="paper invite"><h2>You have a family invitation.</h2><p>Join to add this family to your bookshelf.</p><button disabled={busy} onClick={()=>void act(async()=>{const id=await rpc('accept_invitation',{token:inviteToken()});history.replaceState(null,'',location.pathname);await refresh();setFamilyId(id);})}>Accept invitation</button></section>}
- {!family?<><section className="page-heading"><div><p className="eyebrow">Your own little comic collection</p><h1>My families</h1><p>Different casts. Familiar faces. All your stories, together.</p></div><button onClick={()=>setNewFamily(true)}>＋ Create a family</button></section>
+ {!family?<><section className="shelves-welcome"><p className="eyebrow">Your own little comic collection</p><h1>All your families.<br/><i>All their funny sides.</i></h1><p>Different circles. Familiar faces. Each family has its own personality.</p></section>
  {newFamily&&<form className="paper narrow" onSubmit={e=>{e.preventDefault();const form=e.currentTarget;void act(async()=>{const id=await rpc('create_family',{family_name:new FormData(form).get('name')});await refresh();setFamilyId(id);setTab('People & pets');setNewFamily(false);})}}><h2>Start a new family edition</h2><label>What would you like to call it?<input name="name" required maxLength={100} placeholder="Our house" autoFocus/></label><div className="actions"><button disabled={busy}>Create family</button><button type="button" className="quiet" onClick={()=>setNewFamily(false)}>Cancel</button></div></form>}
- <section className="shelves" aria-label="Your families">{families.map((f,i)=><button key={f.id} className="family-book" style={{'--book-color':['#69826e','#b55c3c','#78799d'][i%3]} as React.CSSProperties} onClick={()=>{setFamilyId(f.id);setTab('Comics')}}><span className="book-cover"><span className="eyebrow">A family edition</span><strong>{f.name}</strong><span className="book-mark" aria-hidden="true">✦</span></span><span className="book-caption"><strong>{f.name}</strong><span>Open collection →</span></span></button>)}</section>
+ <FamilyShelves families={families} memberships={memberships} actor={actor} open={(id,section)=>{setFamilyId(id);setTab(section)}} onError={setError}/>
+ {!!families.length&&<div className="shelf-create"><button className="secondary" onClick={()=>setNewFamily(true)}>＋ Create a family</button><p>Different circles. Familiar faces. Each family gets its own funny pages.</p></div>}
  {!families.length&&!error&&<section className="empty paper"><span className="illustration" aria-hidden="true">▤</span><h2>Your first shelf starts here.</h2><p>Create a family, or accept a family invitation to join their collection.</p><button onClick={()=>setNewFamily(true)}>Create your first family</button></section>}</>:<>
  <button className="quiet back" onClick={()=>setFamilyId(null)}>← My families</button><section className="page-heading"><div><p className="eyebrow">Your family edition</p><h1>{family.name}</h1></div><span className="badge">{role==='owner'?'Family manager':role==='contributor'?'Contributor':'Reader'}</span></section>
  <nav className="tabs" aria-label="Family sections">{(role==='reader'?['Comics']:['Comics','People & pets','Story jar','Cast',...(role==='owner'?['Settings']:[])]).map(t=><button key={t} className={tab===t?'active':''} aria-current={tab===t?'page':undefined} onClick={()=>setTab(t)}>{t}</button>)}</nav>
@@ -34,6 +36,25 @@ function App(){
  </>}
  </>}
  </main><footer>Little stories. A lot of love.<span>Fictional, affectionate family comedy.</span></footer></>;
+}
+function FamilyShelves({families,memberships,actor,open,onError}:{families:Row[];memberships:Row[];actor:string;open:(id:string,section:string)=>void;onError:(message:string)=>void}){
+ const [details,setDetails]=useState<{people:Row[];casts:Row[];episodes:Row[]}|null>(null);
+ useEffect(()=>{let active=true;setDetails(null);if(!families.length)return;Promise.all([rows('people'),rows('cast_versions'),rows('episodes')]).then(([people,casts,episodes])=>{if(active)setDetails({people,casts,episodes})}).catch(e=>{if(active)onError(errorText(e))});return()=>{active=false}},[families]);
+ const today=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Los_Angeles',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+ return <section className="shelves-grid" aria-label="Your families">{families.map(f=>{
+ const people=details?.people.filter(p=>p.family_id===f.id)??[];
+ const cast=details?.casts.filter(c=>c.family_id===f.id).sort((a,b)=>b.created_at.localeCompare(a.created_at))[0];
+ const latest=details?.episodes.filter(e=>e.family_id===f.id).sort((a,b)=>b.day.localeCompare(a.day))[0];
+ const role=memberships.find(m=>m.family_id===f.id&&m.actor_id===actor)?.role;
+ const review=cast&&(!cast.approved_at||cast.visual_revision!==f.visual_revision||cast.missing?.length);
+ return <article className="family-shelf" key={f.id}>
+ <button className="shelf-art" onClick={()=>open(f.id,'Comics')} aria-label={'Open '+f.name+' comics'}>{cast?.object_path?<PrivateImage bucket="family-comics" path={cast.object_path} alt={f.name+' cast'}/>:<span className="shelf-art-placeholder"><span aria-hidden="true">▤</span>{details?'Your cast is taking shape':'Opening your family…'}</span>}</button>
+ <div className="shelf-card-body"><h2>{f.name}</h2><p className="shelf-members">{people.map(p=>p.name.trim()).join(', ')||'Your family edition'}</p>
+ <span className={'shelf-badge '+(latest?.day===today?'new':'')}>{!details?'Opening collection…':latest?.day===today?'✦ New today':review?'Cast review needed':latest?'Your comic collection':f.production_enabled?'Daily comics on':'Setup / paused'}</span>
+ <p className="shelf-latest">{latest?<>Latest comic: <strong>{latest.title}</strong></>:'Your funny pages start here.'}</p>
+ <button onClick={()=>open(f.id,'Comics')}>Read comics →</button>
+ {role&&role!=='reader'&&<button className="secondary" onClick={()=>open(f.id,'People & pets')}>Manage family</button>}</div></article>
+ })}</section>;
 }
 function Login({run,busy}:{run:(fn:()=>Promise<void>)=>Promise<void>;busy:boolean}){
  const [mode,setMode]=useState('signin'),[message,setMessage]=useState('');
