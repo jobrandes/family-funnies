@@ -15,7 +15,7 @@ The standalone app source is implemented and builds, but is not yet deployed or 
 
 ## Development
 
-Run `npm ci`, copy `.env.example` to `.env.local` and fill in the public web-app configuration, then run `npm run dev`. Run `npm test` and `npm run build` before deployment. No administrative credential belongs in a `VITE_` variable.
+Run `npm ci` then `npm run dev`. Public production identifiers are in `src/public-config.ts`; use `.env.example` overrides for a separate environment. Live sign-in still requires the provider integration and server secrets described in `DEPLOYMENT.md`. Run `npm test` and `npm run build` before deployment. No administrative credential belongs in a `VITE_` variable.
 
 No private profiles, family photos, comics or credentials belong in this repository. Reference data is stored privately outside Git. Do not commit environment secrets or service account files.
 

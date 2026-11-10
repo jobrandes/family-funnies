@@ -1,7 +1,7 @@
 import React,{useEffect,useState,type FormEvent} from 'react';
 import {createRoot} from 'react-dom/client';
 import {createUserWithEmailAndPassword,signInWithEmailAndPassword,sendEmailVerification,sendPasswordResetEmail,onAuthStateChanged,signOut,type User} from 'firebase/auth';
-import {auth,db,configured,rows,rpc,signedImage} from './client';
+import {auth,db,configured,rows,rpc,signedImage,firebaseProjectId} from './client';
 import './style.css';
 type Row=Record<string,any>;
 const errorText=(e:unknown)=>e instanceof Error?e.message:typeof e==='object'&&e&&'message'in e?String(e.message):'Something went wrong. Please try again.';
@@ -13,7 +13,7 @@ function App(){
  async function refresh(){try{setError('');const [f,m]=await Promise.all([rows('families'),rows('family_memberships')]);setFamilies(f);setMemberships(m);}catch(e){setError(errorText(e));}}
  useEffect(()=>{if(user?.emailVerified)void refresh()},[user]);
  const family=families.find(f=>f.id===familyId);
- const actor=user?`https://securetoken.google.com/${import.meta.env.VITE_FIREBASE_PROJECT_ID}|${user.uid}`:'';
+ const actor=user?`https://securetoken.google.com/${firebaseProjectId}|${user.uid}`:'';
  const role=memberships.find(m=>m.family_id===familyId&&m.actor_id===actor)?.role;
  async function act(fn:()=>Promise<void>){setBusy(true);setError('');try{await fn()}catch(e){setError(errorText(e))}finally{setBusy(false)}}
  return <><header><a className="brand" href="/" onClick={e=>{e.preventDefault();setFamilyId(null)}}><span aria-hidden="true">▤</span> Our Family Funnies</a>{user&&<button className="quiet" onClick={()=>void signOut(auth!)}>Sign out</button>}</header><main>

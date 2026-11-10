@@ -1,10 +1,15 @@
 import {initializeApp} from 'firebase/app';
 import {getAuth} from 'firebase/auth';
 import {createClient} from '@supabase/supabase-js';
+import {publicConfig} from './public-config';
 const env=import.meta.env;
-export const configured=Boolean(env.VITE_FIREBASE_API_KEY&&env.VITE_FIREBASE_PROJECT_ID&&env.VITE_FIREBASE_APP_ID&&env.VITE_FIREBASE_AUTH_DOMAIN&&env.VITE_SUPABASE_URL&&env.VITE_SUPABASE_PUBLISHABLE_KEY);
-export const auth=configured?getAuth(initializeApp({apiKey:env.VITE_FIREBASE_API_KEY,projectId:env.VITE_FIREBASE_PROJECT_ID,appId:env.VITE_FIREBASE_APP_ID,authDomain:env.VITE_FIREBASE_AUTH_DOMAIN})):null;
-export const db=configured?createClient(env.VITE_SUPABASE_URL,env.VITE_SUPABASE_PUBLISHABLE_KEY,{accessToken:async()=>auth?.currentUser?await auth.currentUser.getIdToken():null}):null;
+export const firebaseProjectId=env.VITE_FIREBASE_PROJECT_ID||publicConfig.firebase.projectId;
+const firebaseConfig={apiKey:env.VITE_FIREBASE_API_KEY||publicConfig.firebase.apiKey,projectId:firebaseProjectId,appId:env.VITE_FIREBASE_APP_ID||publicConfig.firebase.appId,authDomain:env.VITE_FIREBASE_AUTH_DOMAIN||publicConfig.firebase.authDomain};
+const supabaseUrl=env.VITE_SUPABASE_URL||publicConfig.supabaseUrl;
+const publishableKey=env.VITE_SUPABASE_PUBLISHABLE_KEY||publicConfig.supabasePublishableKey;
+export const configured=Boolean(firebaseConfig.apiKey&&firebaseConfig.projectId&&firebaseConfig.appId&&firebaseConfig.authDomain&&supabaseUrl&&publishableKey);
+export const auth=configured?getAuth(initializeApp(firebaseConfig)):null;
+export const db=configured?createClient(supabaseUrl,publishableKey,{accessToken:async()=>auth?.currentUser?await auth.currentUser.getIdToken():null}):null;
 export async function assertAccess(){
  const u=auth?.currentUser;
  if(!u||!u.emailVerified)throw new Error('Verify your email before opening your families.');

@@ -26,8 +26,8 @@ Database advisors report three informational notices for intentionally default-d
 
 ## Remaining launch work
 
-- Register the Firebase Web app and configure public browser identifiers.
-- Connect Firebase as the Supabase trusted provider and set the exact database issuer/audience allowlist (currently empty, so access fails closed).
+- Firebase Web app is registered and public browser identifiers are configured. The exact Firebase issuer/audience is registered in the database allowlist.
+- Connect Firebase as the Supabase third-party provider. Database allowlisting alone does not configure the API gateway.
 - Configure the Cloudflare Free deployment and server-only authentication bootstrap credentials.
 - Run real sign-in/email recovery and two-family end-to-end tests, upload tests and phone/tablet/desktop visual QA. CSS breakpoints are not evidence of browser testing.
 - Implement cast worker claim/complete/fail endpoints, trusted runner connection and guarded production enable. Job tables alone do not produce images. New app production remains paused.
