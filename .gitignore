@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+.wrangler/
+.firebase/
+coverage/
+private-data/
+*.pem
+*-adminsdk-*.json
+service-account*.json
