@@ -8,13 +8,17 @@ Register a Web app in the existing Firebase project (Project settings → Genera
 
 Enable Firebase email/password signup and verification. Add the exact Firebase project to Supabase Authentication → Third-party Auth. Configure the exact issuer and audience in `family_private.identity_providers` using an administrative connection.
 
-New Firebase users need the server-issued `role: authenticated` custom claim for Supabase. `functions/api/bootstrap.ts` and `worker/auth-bridge.mjs` implement the Cloudflare Pages bootstrap: verify the Firebase signature, project, expiry, timestamps, verified email and uid, then check the account is enabled and tokens not revoked before provisioning that same user. It preserves existing server claims and never accepts a requested uid/role from the client. Tests use real signed local JWTs and mocked Google administration calls; the live integration is not tested yet.
+New Firebase users need the server-issued `role: authenticated` custom claim for Supabase. Service-account key creation is blocked by the project's organization policy. Keep that policy enabled. The app no longer needs a `GOOGLE_SERVICE_ACCOUNT` key or a Cloudflare bootstrap function.
 
-The Pages Function needs `FIREBASE_PROJECT_ID` and a server-only `GOOGLE_SERVICE_ACCOUNT` JSON secret for the same project. Use a dedicated account with only the Firebase user read/update permissions required by the bootstrap. Do not paste its private key into chat or Git. Add it directly to encrypted deployment secrets after reviewing its permissions. Do not grant client-selected roles or enable paid Firebase Functions. The browser deliberately refuses database access without the claim. Add deployment-level abuse/rate limiting before opening registration widely.
+Run `scripts/setup-keyless-login.sh` in the owner's Google Cloud Shell after reviewing its changes. It enables IAM/STS APIs, creates a workload identity pool/provider and grants only the repository's main-branch `activate-accounts.yml` workflow service-account impersonation. The existing service account still has only the custom `firebaseauth.users.get` and `firebaseauth.users.update` role. The script creates no private key and changes no billing or organization policies. Stop on permission/policy errors rather than disabling controls.
+
+Copy the two public values printed by the script into GitHub repository Settings → Secrets and variables → Actions → Variables: `WIF_PROVIDER` and `WIF_SERVICE_ACCOUNT`. Then run the 'Activate verified family accounts' workflow manually once. It uses short-lived Google tokens, activates verified enabled accounts without an existing explicit role, preserves other server claims, and logs aggregate counts only. No user records or credentials are written to workflow artifacts.
+
+The workflow is scheduled at ten-minute intervals but GitHub schedules can be delayed and public-repository schedules can stop after 60 days of inactivity. The app says activation is pending until a refreshed token carries the claim; it does not promise immediate activation. A manager can run the workflow manually if delayed. This is an interim small-family solution, not a guaranteed real-time provisioning service. Standard public-repository GitHub-hosted runners are free under the current plan; do not switch to paid runners or a paid plan.
 
 ## Cloudflare Free
 
-Connect the GitHub repository to Cloudflare Pages on Free. Build command `npm run build`, output `dist`. Add the six public environment variables and the deployment hostname to Firebase Authorized domains. Do not switch to a paid plan or add billing-only services. No public personal content is included in the bundle.
+The GitHub repository is connected to Cloudflare Pages at `https://family-funnies.pages.dev/`. Build command `npm run build`, output `dist`. Public configuration is in source; optional environment overrides are supported. Add `family-funnies.pages.dev` to Firebase Authorized domains. Do not switch to a paid plan or add billing-only services. No public personal content is included in the bundle.
 
 ## Validation gates before inviting relatives
 

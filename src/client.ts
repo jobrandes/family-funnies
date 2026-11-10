@@ -13,13 +13,8 @@ export const db=configured?createClient(supabaseUrl,publishableKey,{accessToken:
 export async function assertAccess(){
  const u=auth?.currentUser;
  if(!u||!u.emailVerified)throw new Error('Verify your email before opening your families.');
- let token=await u.getIdTokenResult();
- if(token.claims.role!=='authenticated'){
-  const response=await fetch('/api/bootstrap',{method:'POST',headers:{Authorization:`Bearer ${token.token}`}});
-  if(!response.ok)throw new Error('Account connection is not ready yet. Your email is verified; the administrator still needs to finish connecting sign-in.');
-  token=await u.getIdTokenResult(true);
-  if(token.claims.role!=='authenticated')throw new Error('Please sign in again to finish connecting your account.');
- }
+ const token=await u.getIdTokenResult(true);
+ if(token.claims.role!=='authenticated')throw new Error('Your email is verified. Account activation is pending; please try Refresh after a few minutes.');
 }
 export async function rows(table:string,familyId?:string){
  if(!db)throw new Error('The app connection is not configured yet.');

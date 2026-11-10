@@ -1,0 +1,35 @@
+name: Activate verified family accounts
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '7,17,27,37,47,57 * * * *'
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: verified-account-activation
+  cancel-in-progress: false
+jobs:
+  activate:
+    if: github.repository == 'jobrandes/family-funnies' && github.ref == 'refs/heads/main' && vars.WIF_PROVIDER != '' && vars.WIF_SERVICE_ACCOUNT != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        id: google
+        with:
+          workload_identity_provider: ${{ vars.WIF_PROVIDER }}
+          service_account: ${{ vars.WIF_SERVICE_ACCOUNT }}
+          token_format: access_token
+          access_token_scopes: https://www.googleapis.com/auth/identitytoolkit
+          access_token_lifetime: 600s
+          create_credentials_file: false
+          export_environment_variables: false
+      - name: Activate verified accounts without private keys
+        env:
+          FIREBASE_PROJECT_ID: family-funnies
+          GOOGLE_ACCESS_TOKEN: ${{ steps.google.outputs.access_token }}
+        run: node scripts/activate-accounts.mjs
