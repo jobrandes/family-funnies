@@ -1,31 +1,39 @@
 # Standalone migration status
 
-This repository starts the independent Family Funnies application. It does not yet contain a deployable web app.
+## Implemented in source
 
-## Completed
+- React/TypeScript app with cream-paper bookshelf home and compact family tabs; responsive CSS for desktop, tablet and phone.
+- Firebase email/password signup, verification, reset and sign-out screens. Missing deployment configuration shows an honest setup state.
+- Membership-scoped family listing/creation; reader/contributor/manager views.
+- Person/pet profiles, memorial instructions, six private photo reference slots, photo removal, story jar and family preferences.
+- Cast draft viewing, stale/missing-member checks and owner-only approval. Generation connection is explicitly pending.
+- Single-use invitation links with hashed tokens, seven-day expiry, acceptance and revocation. Only owners create/revoke invitations; contributor/reader roles only.
+- Private comic archive viewing for signed-in members. New guest sharing is not implemented; old reader links continue to work.
+- Cloudflare Pages authentication bootstrap with cryptographic Firebase token validation and server-only Google account provisioning. Secrets and live integration remain pending.
+- Pinned dependencies, lockfile and browser security headers.
 
-- Separate database project and the schema in `database/foundation.sql`.
-- Owner, contributor and reader membership permissions.
-- Private reference-photo and comic buckets with family-scoped access.
-- Cast revision tracking and queued jobs when visual profiles change.
-- Memorial profile fields and up to six reference slots per person.
-- Unique comic per family per day.
-- Live database integration tests in `tests/isolation.sql`, run successfully with all synthetic fixtures rolled back.
+## Applied database migrations
 
-## Pending
+`database/foundation.sql` and `database/invitations.sql` are applied to the separate new project. The current owner-private Site, existing reader, production automations and other projects remain unchanged. No real family data is migrated.
 
-- Firebase project setup, verified email/password login and trusted issuer configuration.
-- Server-only Firebase custom-claim provisioning. Do not enable paid Firebase Functions to implement this.
-- Standalone responsive bookshelf UI, family onboarding and profile editing.
-- Single-use expiring management invitations and revocable comic-only guest archive links.
-- Cast job claim, completion, failure, approval and production-readiness APIs.
-- Generation runner integration, Cloudflare deployment and verified data migration.
-- End-to-end authentication, invitations, upload and responsive-browser tests.
+## Verified
 
-The identity-provider allowlist currently has no entries: the new database denies end-user access until the sign-in integration is configured. Tables for jobs, invitations and shares are groundwork; they do not imply these features are available.
+- TypeScript check and production build.
+- Both SQL integration tests against the new database, with synthetic fixtures rolled back: isolation, role escalation, reader profile privacy, contributor restrictions, cast invalidation, job queueing, daily uniqueness, invite roles/replay/expiry/revocation and owner-only/stale-cast approval.
+- Authentication bridge unit tests: valid signatures, wrong issuer/audience, expired/future tokens, unverified/disabled/revoked users, request origin, missing secrets and uid-scoped provisioning.
+
+Database advisors report three informational notices for intentionally default-deny private tables; no warning/error findings at last check.
+
+## Remaining launch work
+
+- Register the Firebase Web app and configure public browser identifiers.
+- Connect Firebase as the Supabase trusted provider and set the exact database issuer/audience allowlist (currently empty, so access fails closed).
+- Configure the Cloudflare Free deployment and server-only authentication bootstrap credentials.
+- Run real sign-in/email recovery and two-family end-to-end tests, upload tests and phone/tablet/desktop visual QA. CSS breakpoints are not evidence of browser testing.
+- Implement cast worker claim/complete/fail endpoints, trusted runner connection and guarded production enable. Job tables alone do not produce images. New app production remains paused.
+- Implement stable revocable comic-only guest links, authorized profile reuse/import, member removal/ownership transfer and verified data migration.
+- Add storage/traffic caps, recovery exports and abuse limits before broader onboarding.
 
 ## Budget and privacy
 
-Additional spending must remain $0. No paid upgrades, pay-as-you-go services, SMS login or paid image API may be enabled. Free storage/traffic quotas require limits and monitoring; no promise of unlimited free operation.
-
-The current owner-private Site, existing comic reader links and scheduled production remain in place during development. Never publish their profiles, photos, comics, service tokens or exported data in this repository. Keep administrative keys in deployment secrets. Database migrations contain schema only.
+Additional spend remains $0. No paid upgrade, Firebase Functions, SMS login or paid image API is enabled. Never commit private profiles, photos, comics, tokens or service keys. Keep existing Site sharing and reader links intact until migration is tested and complete.
