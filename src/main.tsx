@@ -1,75 +1,1376 @@
-import React,{useEffect,useState,type FormEvent} from 'react';
-import {createRoot} from 'react-dom/client';
-import {createUserWithEmailAndPassword,signInWithEmailAndPassword,sendEmailVerification,sendPasswordResetEmail,onAuthStateChanged,signOut,type User} from 'firebase/auth';
-import {auth,db,configured,rows,rpc,signedImage,firebaseProjectId} from './client';
-import './style.css';
-import './shelves.css';
-type Row=Record<string,any>;
-const errorText=(e:unknown)=>e instanceof Error?e.message:typeof e==='object'&&e&&'message'in e?String(e.message):'Something went wrong. Please try again.';
-const inviteToken=()=>new URLSearchParams(location.hash.slice(1)).get('invite');
-function App(){
- const [user,setUser]=useState<User|null>(null),[loading,setLoading]=useState(true),[families,setFamilies]=useState<Row[]>([]),[familyId,setFamilyId]=useState<string|null>(null),[tab,setTab]=useState('Comics'),[error,setError]=useState(''),[busy,setBusy]=useState(false),[newFamily,setNewFamily]=useState(false);
- const [memberships,setMemberships]=useState<Row[]>([]);
- useEffect(()=>{if(!auth){setLoading(false);return;}return onAuthStateChanged(auth,u=>{setUser(u);setLoading(false);if(!u){setFamilies([]);setFamilyId(null);setMemberships([]);}})},[]);
- async function refresh(){try{setError('');const [f,m]=await Promise.all([rows('families'),rows('family_memberships')]);setFamilies(f);setMemberships(m);}catch(e){setError(errorText(e));}}
- useEffect(()=>{if(user?.emailVerified)void refresh()},[user]);
- const family=families.find(f=>f.id===familyId);
- const actor=user?`https://securetoken.google.com/${firebaseProjectId}|${user.uid}`:'';
- const role=memberships.find(m=>m.family_id===familyId&&m.actor_id===actor)?.role;
- async function act(fn:()=>Promise<void>){setBusy(true);setError('');try{await fn()}catch(e){setError(errorText(e))}finally{setBusy(false)}}
- return <><header><a className="brand" href="/" onClick={e=>{e.preventDefault();setFamilyId(null)}}><span aria-hidden="true">▤</span> Our Family Funnies</a>{user&&<button className="quiet" onClick={()=>void signOut(auth!)}>Sign out</button>}</header><main>
- {error&&<div className="notice error" role="alert">{error}<div>{user?.emailVerified&&<button className="quiet" disabled={busy} onClick={()=>void act(refresh)}>Refresh</button>}<button className="quiet" onClick={()=>setError('')} aria-label="Dismiss error">×</button></div></div>}
- {loading?<p role="status">Opening your collection…</p>:!configured?<section className="welcome"><p className="eyebrow">A new home for your family stories</p><h1>Every family has<br/>a funny side.</h1><p>Your private comic bookshelf is taking shape. Account setup is still being connected; this version is not open for sign-ups yet.</p><div className="paper"><strong>Your existing comics are safe.</strong><p>Keep using your current family links while we finish connecting this new app.</p></div></section>:!user?<Login busy={busy} run={act}/>:!user.emailVerified?<section className="narrow paper"><p className="eyebrow">One quick check</p><h1>Check your email.</h1><p>Verify {user.email} to open your families.</p><button disabled={busy} onClick={()=>void act(async()=>{await user.reload();if(!auth!.currentUser!.emailVerified)throw new Error('The verification has not arrived yet. Open the link in your email, then try again.');setUser(Object.assign(Object.create(Object.getPrototypeOf(user)),user));})}>I’ve verified my email</button><button className="quiet" disabled={busy} onClick={()=>void act(async()=>{await sendEmailVerification(user)})}>Resend verification</button></section>:<>
- {inviteToken()&&<section className="paper invite"><h2>You have a family invitation.</h2><p>Join to add this family to your bookshelf.</p><button disabled={busy} onClick={()=>void act(async()=>{const id=await rpc('accept_invitation',{token:inviteToken()});history.replaceState(null,'',location.pathname);await refresh();setFamilyId(id);})}>Accept invitation</button></section>}
- {!family?<><section className="shelves-welcome"><p className="eyebrow">Your own little comic collection</p><h1>All your families.<br/><i>All their funny sides.</i></h1><p>Different circles. Familiar faces. Each family has its own personality.</p></section>
- {newFamily&&<form className="paper narrow" onSubmit={e=>{e.preventDefault();const form=e.currentTarget;void act(async()=>{const id=await rpc('create_family',{family_name:new FormData(form).get('name')});await refresh();setFamilyId(id);setTab('People & pets');setNewFamily(false);})}}><h2>Start a new family edition</h2><label>What would you like to call it?<input name="name" required maxLength={100} placeholder="Our house" autoFocus/></label><div className="actions"><button disabled={busy}>Create family</button><button type="button" className="quiet" onClick={()=>setNewFamily(false)}>Cancel</button></div></form>}
- <FamilyShelves families={families} memberships={memberships} actor={actor} open={(id,section)=>{setFamilyId(id);setTab(section)}} onError={setError}/>
- {!!families.length&&<div className="shelf-create"><button className="secondary" onClick={()=>setNewFamily(true)}>＋ Create a family</button><p>Different circles. Familiar faces. Each family gets its own funny pages.</p></div>}
- {!families.length&&!error&&<section className="empty paper"><span className="illustration" aria-hidden="true">▤</span><h2>Your first shelf starts here.</h2><p>Create a family, or accept a family invitation to join their collection.</p><button onClick={()=>setNewFamily(true)}>Create your first family</button></section>}</>:<>
- <button className="quiet back" onClick={()=>setFamilyId(null)}>← My families</button><section className="page-heading"><div><p className="eyebrow">Your family edition</p><h1>{family.name}</h1></div><span className="badge">{role==='owner'?'Family manager':role==='contributor'?'Contributor':'Reader'}</span></section>
- <nav className="tabs" aria-label="Family sections">{(role==='reader'?['Comics']:['Comics','People & pets','Story jar','Cast',...(role==='owner'?['Settings']:[])]).map(t=><button key={t} className={tab===t?'active':''} aria-current={tab===t?'page':undefined} onClick={()=>setTab(t)}>{t}</button>)}</nav>
- {tab==='Comics'&&<Comics id={family.id} onError={setError}/>}
- {tab==='People & pets'&&<People id={family.id} run={act} busy={busy} onChange={refresh}/>}
- {tab==='Story jar'&&<StoryJar id={family.id} run={act} busy={busy}/>}
- {tab==='Cast'&&<Cast family={family} owner={role==='owner'} run={act} busy={busy}/>}
- {tab==='Settings'&&role==='owner'&&<Settings family={family} run={act} busy={busy} onChange={refresh}/>}
- </>}
- </>}
- </main><footer>Little stories. A lot of love.<span>Fictional, affectionate family comedy.</span></footer></>;
+import React, { useEffect, useState, type FormEvent } from "react";
+import { createRoot } from "react-dom/client";
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  sendEmailVerification,
+  sendPasswordResetEmail,
+  onAuthStateChanged,
+  signOut,
+  type User,
+} from "firebase/auth";
+import {
+  auth,
+  db,
+  configured,
+  rows,
+  rpc,
+  signedImage,
+  firebaseProjectId,
+} from "./client";
+import "./style.css";
+import "./shelves.css";
+import {GooglePhotos} from './google-photos';
+const mirroredFamilies=new Set(['a558ec80-f1ee-4094-9bc2-689d0e54f063','94c3f471-bd68-4390-89fe-74b250b40754','e47f2cc4-c03b-4537-a08a-729c94fe41cf']);
+type Row = Record<string, any>;
+const errorText = (e: unknown) =>
+  e instanceof Error
+    ? e.message
+    : typeof e === "object" && e && "message" in e
+      ? String(e.message)
+      : "Something went wrong. Please try again.";
+const inviteToken = () =>
+  new URLSearchParams(location.hash.slice(1)).get("invite");
+function App() {
+  const [user, setUser] = useState<User | null>(null),
+    [loading, setLoading] = useState(true),
+    [families, setFamilies] = useState<Row[]>([]),
+    [familyId, setFamilyId] = useState<string | null>(null),
+    [tab, setTab] = useState("Comics"),
+    [error, setError] = useState(""),
+    [busy, setBusy] = useState(false),
+    [newFamily, setNewFamily] = useState(false);
+  const [memberships, setMemberships] = useState<Row[]>([]);
+  const [activating,setActivating]=useState(false);
+  useEffect(() => {
+    if (!auth) {
+      setLoading(false);
+      return;
+    }
+    return onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      setLoading(false);
+      if (!u) {
+        setFamilies([]);
+        setFamilyId(null);
+        setMemberships([]);
+      }
+    });
+  }, []);
+  async function refresh() {
+    try {
+      setError("");
+      const [f, m] = await Promise.all([
+        rows("families"),
+        rows("family_memberships"),
+      ]);
+      setFamilies(f);
+      setMemberships(m);
+      setActivating(false);
+    } catch (e) {
+      if(errorText(e).includes('activation is pending'))setActivating(true);
+      else setError(errorText(e));
+    }
+  }
+  useEffect(() => {
+    if (user?.emailVerified) void refresh();
+  }, [user]);
+  useEffect(()=>{if(!activating)return;const timer=setInterval(()=>void refresh(),30000);return()=>clearInterval(timer)},[activating]);
+  const family = families.find((f) => f.id === familyId);
+  const actor = user
+    ? `https://securetoken.google.com/${firebaseProjectId}|${user.uid}`
+    : "";
+  const role = memberships.find(
+    (m) => m.family_id === familyId && m.actor_id === actor,
+  )?.role;
+  async function act(fn: () => Promise<void>) {
+    setBusy(true);
+    setError("");
+    try {
+      await fn();
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <>
+      <header>
+        <a
+          className="brand"
+          href="/"
+          onClick={(e) => {
+            e.preventDefault();
+            setFamilyId(null);
+          }}
+        >
+          <span aria-hidden="true">▤</span> Our Family Funnies
+        </a>
+        {user && (
+          <button className="quiet" onClick={() => void signOut(auth!)}>
+            Sign out
+          </button>
+        )}
+      </header>
+      <main>
+        {error && (
+          <div className="notice error" role="alert">
+            {error}
+            <div>
+              {user?.emailVerified && (
+                <button
+                  className="quiet"
+                  disabled={busy}
+                  onClick={() => void act(refresh)}
+                >
+                  Refresh
+                </button>
+              )}
+              <button
+                className="quiet"
+                onClick={() => setError("")}
+                aria-label="Dismiss error"
+              >
+                ×
+              </button>
+            </div>
+          </div>
+        )}
+        {loading ? (
+          <p role="status">Opening your collection…</p>
+        ) : !configured ? (
+          <section className="welcome">
+            <p className="eyebrow">A new home for your family stories</p>
+            <h1>
+              Every family has
+              <br />a funny side.
+            </h1>
+            <p>
+              Your private comic bookshelf is taking shape. Account setup is
+              still being connected; this version is not open for sign-ups yet.
+            </p>
+            <div className="paper">
+              <strong>Your existing comics are safe.</strong>
+              <p>
+                Keep using your current family links while we finish connecting
+                this new app.
+              </p>
+            </div>
+          </section>
+        ) : !user ? (
+          <Login busy={busy} run={act} />
+        ) : !user.emailVerified ? (
+          <section className="narrow paper">
+            <p className="eyebrow">One quick check</p>
+            <h1>Check your email.</h1>
+            <p>Verify {user.email} to open your families.</p>
+            <button
+              disabled={busy}
+              onClick={() =>
+                void act(async () => {
+                  await user.reload();
+                  if (!auth!.currentUser!.emailVerified)
+                    throw new Error(
+                      "The verification has not arrived yet. Open the link in your email, then try again.",
+                    );
+                  setUser(
+                    Object.assign(
+                      Object.create(Object.getPrototypeOf(user)),
+                      user,
+                    ),
+                  );
+                })
+              }
+            >
+              I’ve verified my email
+            </button>
+            <button
+              className="quiet"
+              disabled={busy}
+              onClick={() =>
+                void act(async () => {
+                  await sendEmailVerification(user);
+                })
+              }
+            >
+              Resend verification
+            </button>
+          </section>
+        ) : activating ? <section className="paper narrow" role="status"><p className="eyebrow">Email verified</p><h1>Getting your account ready.</h1><p>This usually takes a few minutes. We’ll open your collection automatically when it’s ready.</p><p className="muted">You can leave this page open.</p></section> : (
+          <>
+            {inviteToken() && (
+              <section className="paper invite">
+                <h2>You have a family invitation.</h2>
+                <p>Join to add this family to your bookshelf.</p>
+                <button
+                  disabled={busy}
+                  onClick={() =>
+                    void act(async () => {
+                      const id = await rpc("accept_invitation", {
+                        token: inviteToken(),
+                      });
+                      history.replaceState(null, "", location.pathname);
+                      await refresh();
+                      setFamilyId(id);
+                    })
+                  }
+                >
+                  Accept invitation
+                </button>
+              </section>
+            )}
+            {!family ? (
+              <>
+                <section className="shelves-welcome">
+                  <p className="eyebrow">Your own little comic collection</p>
+                  <h1>
+                    All your families.
+                    <br />
+                    <i>All their funny sides.</i>
+                  </h1>
+                  <p>
+                    Different circles. Familiar faces. Each family has its own
+                    personality.
+                  </p>
+                </section>
+                {newFamily && (
+                  <form
+                    className="paper narrow"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      const form = e.currentTarget;
+                      void act(async () => {
+                        const id = await rpc("create_family", {
+                          family_name: new FormData(form).get("name"),
+                        });
+                        await refresh();
+                        setFamilyId(id);
+                        setTab("People & pets");
+                        setNewFamily(false);
+                      });
+                    }}
+                  >
+                    <h2>Start a new family edition</h2>
+                    <label>
+                      What would you like to call it?
+                      <input
+                        name="name"
+                        required
+                        maxLength={100}
+                        placeholder="Our house"
+                        autoFocus
+                      />
+                    </label>
+                    <div className="actions">
+                      <button disabled={busy}>Create family</button>
+                      <button
+                        type="button"
+                        className="quiet"
+                        onClick={() => setNewFamily(false)}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                )}
+                <FamilyShelves
+                  families={families}
+                  memberships={memberships}
+                  actor={actor}
+                  open={(id, section) => {
+                    setFamilyId(id);
+                    setTab(section);
+                  }}
+                  onError={setError}
+                />
+                {!!families.length && (
+                  <div className="shelf-create">
+                    <button
+                      className="secondary"
+                      onClick={() => setNewFamily(true)}
+                    >
+                      ＋ Create a family
+                    </button>
+                    <p>
+                      Different circles. Familiar faces. Each family gets its
+                      own funny pages.
+                    </p>
+                  </div>
+                )}
+                {!families.length && !error && (
+                  <section className="empty paper">
+                    <span className="illustration" aria-hidden="true">
+                      ▤
+                    </span>
+                    <h2>Your first shelf starts here.</h2>
+                    <p>
+                      Create a family, or accept a family invitation to join
+                      their collection.
+                    </p>
+                    <button onClick={() => setNewFamily(true)}>
+                      Create your first family
+                    </button>
+                  </section>
+                )}
+              </>
+            ) : (
+              <>
+                <button
+                  className="quiet back"
+                  onClick={() => setFamilyId(null)}
+                >
+                  ← My families
+                </button>
+                <section className="page-heading">
+                  <div>
+                    <p className="eyebrow">Your family edition</p>
+                    <h1>{family.name}</h1>
+                  </div>
+                  <span className="badge">
+                    {role === "owner"
+                      ? "Family manager"
+                      : role === "contributor"
+                        ? "Contributor"
+                        : "Reader"}
+                  </span>
+                </section>
+                <nav className="tabs" aria-label="Family sections">
+                  {(role === "reader"
+                    ? ["Comics"]
+                    : [
+                        "Comics",
+                        "People & pets",
+                        "Story jar",
+                        "Cast",
+                        ...(role === "owner" ? ["Settings"] : []),
+                      ]
+                  ).map((t) => (
+                    <button
+                      key={t}
+                      className={tab === t ? "active" : ""}
+                      aria-current={tab === t ? "page" : undefined}
+                      onClick={() => setTab(t)}
+                    >
+                      {t}
+                    </button>
+                  ))}
+                </nav>
+                {tab === "Comics" && (
+                  <Comics id={family.id} onError={setError} />
+                )}
+                {tab === "People & pets" && (
+                  <People
+                    id={family.id}
+                    run={act}
+                    busy={busy}
+                    onChange={refresh}
+                  />
+                )}
+                {tab === "Story jar" && (
+                  <StoryJar id={family.id} run={act} busy={busy} />
+                )}
+                {tab === "Cast" && (
+                  <Cast
+                    onChange={refresh}
+                    family={family}
+                    owner={role === "owner"}
+                    run={act}
+                    busy={busy}
+                  />
+                )}
+                {tab === "Settings" && role === "owner" && (
+                  <Settings
+                    family={family}
+                    run={act}
+                    busy={busy}
+                    onChange={refresh}
+                  />
+                )}
+              </>
+            )}
+          </>
+        )}
+      </main>
+      <footer>
+        Little stories. A lot of love.
+        <span>Fictional, affectionate family comedy.</span>
+      </footer>
+    </>
+  );
 }
-function FamilyShelves({families,memberships,actor,open,onError}:{families:Row[];memberships:Row[];actor:string;open:(id:string,section:string)=>void;onError:(message:string)=>void}){
- const [details,setDetails]=useState<{people:Row[];casts:Row[];episodes:Row[]}|null>(null);
- useEffect(()=>{let active=true;setDetails(null);if(!families.length)return;Promise.all([rows('people'),rows('cast_versions'),rows('episodes')]).then(([people,casts,episodes])=>{if(active)setDetails({people,casts,episodes})}).catch(e=>{if(active)onError(errorText(e))});return()=>{active=false}},[families]);
- const today=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Los_Angeles',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
- return <section className="shelves-grid" aria-label="Your families">{families.map(f=>{
- const people=details?.people.filter(p=>p.family_id===f.id)??[];
- const cast=details?.casts.filter(c=>c.family_id===f.id).sort((a,b)=>b.created_at.localeCompare(a.created_at))[0];
- const latest=details?.episodes.filter(e=>e.family_id===f.id).sort((a,b)=>b.day.localeCompare(a.day))[0];
- const role=memberships.find(m=>m.family_id===f.id&&m.actor_id===actor)?.role;
- const review=cast&&(!cast.approved_at||cast.visual_revision!==f.visual_revision||cast.missing?.length);
- return <article className="family-shelf" key={f.id}>
- <button className="shelf-art" onClick={()=>open(f.id,'Comics')} aria-label={'Open '+f.name+' comics'}>{cast?.object_path?<PrivateImage bucket="family-comics" path={cast.object_path} alt={f.name+' cast'}/>:<span className="shelf-art-placeholder"><span aria-hidden="true">▤</span>{details?'Your cast is taking shape':'Opening your family…'}</span>}</button>
- <div className="shelf-card-body"><h2>{f.name}</h2><p className="shelf-members">{people.map(p=>p.name.trim()).join(', ')||'Your family edition'}</p>
- <span className={'shelf-badge '+(latest?.day===today?'new':'')}>{!details?'Opening collection…':latest?.day===today?'✦ New today':review?'Cast review needed':latest?'Your comic collection':f.production_enabled?'Daily comics on':'Setup / paused'}</span>
- <p className="shelf-latest">{latest?<>Latest comic: <strong>{latest.title}</strong></>:'Your funny pages start here.'}</p>
- <button onClick={()=>open(f.id,'Comics')}>Read comics →</button>
- {role&&role!=='reader'&&<button className="secondary" onClick={()=>open(f.id,'People & pets')}>Manage family</button>}</div></article>
- })}</section>;
+function FamilyShelves({
+  families,
+  memberships,
+  actor,
+  open,
+  onError,
+}: {
+  families: Row[];
+  memberships: Row[];
+  actor: string;
+  open: (id: string, section: string) => void;
+  onError: (message: string) => void;
+}) {
+  const [details, setDetails] = useState<{
+    people: Row[];
+    casts: Row[];
+    episodes: Row[];
+  } | null>(null);
+  useEffect(() => {
+    let active = true;
+    setDetails(null);
+    if (!families.length) return;
+    Promise.all([rows("people"), rows("cast_versions"), rows("episodes")])
+      .then(([people, casts, episodes]) => {
+        if (active) setDetails({ people, casts, episodes });
+      })
+      .catch((e) => {
+        if (active) onError(errorText(e));
+      });
+    return () => {
+      active = false;
+    };
+  }, [families]);
+  const today = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Los_Angeles",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+  return (
+    <section className="shelves-grid" aria-label="Your families">
+      {families.map((f) => {
+        const people =
+          details?.people.filter((p) => p.family_id === f.id) ?? [];
+        const cast = details?.casts
+          .filter((c) => c.family_id === f.id)
+          .sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+        const latest = details?.episodes
+          .filter((e) => e.family_id === f.id)
+          .sort((a, b) => b.day.localeCompare(a.day))[0];
+        const role = memberships.find(
+          (m) => m.family_id === f.id && m.actor_id === actor,
+        )?.role;
+        const review =
+          cast &&
+          (!cast.approved_at ||
+            cast.visual_revision !== f.visual_revision ||
+            cast.missing?.length);
+        return (
+          <article className="family-shelf" key={f.id}>
+            <button
+              className="shelf-art"
+              onClick={() => open(f.id, "Comics")}
+              aria-label={"Open " + f.name + " comics"}
+            >
+              {cast?.object_path ? (
+                <PrivateImage
+                  bucket="family-comics"
+                  path={cast.object_path}
+                  alt={f.name + " cast"}
+                />
+              ) : (
+                <span className="shelf-art-placeholder">
+                  <span aria-hidden="true">▤</span>
+                  {details
+                    ? "Your cast is taking shape"
+                    : "Opening your family…"}
+                </span>
+              )}
+            </button>
+            <div className="shelf-card-body">
+              <h2>{f.name}</h2>
+              <p className="shelf-members">
+                {people.map((p) => p.name.trim()).join(", ") ||
+                  "Your family edition"}
+              </p>
+              <span
+                className={
+                  "shelf-badge " + (latest?.day === today ? "new" : "")
+                }
+              >
+                {!details
+                  ? "Opening collection…"
+                  : latest?.day === today
+                    ? "✦ New today"
+                    : review
+                      ? "Cast review needed"
+                      : latest
+                        ? "Your comic collection"
+                        : f.production_enabled
+                          ? "Daily comics on"
+                          : "Setup / paused"}
+              </span>
+              <p className="shelf-latest">
+                {latest ? (
+                  <>
+                    Latest comic: <strong>{latest.title}</strong>
+                  </>
+                ) : (
+                  "Your funny pages start here."
+                )}
+              </p>
+              <button onClick={() => open(f.id, "Comics")}>
+                Read comics →
+              </button>
+              {role && role !== "reader" && (
+                <button
+                  className="secondary"
+                  onClick={() => open(f.id, "People & pets")}
+                >
+                  Manage family
+                </button>
+              )}
+            </div>
+          </article>
+        );
+      })}
+    </section>
+  );
 }
-function Login({run,busy}:{run:(fn:()=>Promise<void>)=>Promise<void>;busy:boolean}){
- const [mode,setMode]=useState('signin'),[message,setMessage]=useState('');
- async function submit(e:FormEvent<HTMLFormElement>){e.preventDefault();const d=new FormData(e.currentTarget);await run(async()=>{const email=String(d.get('email'));if(mode==='reset'){await sendPasswordResetEmail(auth!,email);setMessage('If an account exists, a password reset email will arrive shortly.');return;}const password=String(d.get('password'));if(mode==='signup'){const result=await createUserWithEmailAndPassword(auth!,email,password);await sendEmailVerification(result.user);}else await signInWithEmailAndPassword(auth!,email,password);});}
- return <section className="login-layout"><div><p className="eyebrow">Made for your people</p><h1>Your family.<br/>Your funny pages.</h1><p>Create a cast, collect your comics, and share a smile with the people you love.</p><p className="muted">Just reading? Use the family link you were sent—no account needed.</p></div><form className="paper" onSubmit={submit}><h2>{mode==='signup'?'Start your collection':mode==='reset'?'Reset your password':'Welcome back'}</h2><p>No ChatGPT account needed.</p>{message&&<p role="status">{message}</p>}<label>Email<input name="email" type="email" autoComplete="email" required/></label>{mode!=='reset'&&<label>Password<input name="password" type="password" autoComplete={mode==='signup'?'new-password':'current-password'} minLength={8} required/></label>}<button disabled={busy}>{busy?'One moment…':mode==='signup'?'Create account':mode==='reset'?'Send reset email':'Sign in'}</button><button type="button" className="quiet" onClick={()=>{setMode(mode==='signup'?'signin':'signup');setMessage('')}}>{mode==='signup'?'Already have an account? Sign in':'New here? Create an account'}</button>{mode==='signin'&&<button type="button" className="quiet" onClick={()=>setMode('reset')}>Forgot password?</button>}</form></section>;
+function Login({
+  run,
+  busy,
+}: {
+  run: (fn: () => Promise<void>) => Promise<void>;
+  busy: boolean;
+}) {
+  const [mode, setMode] = useState("signin"),
+    [message, setMessage] = useState("");
+  async function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    const d = new FormData(e.currentTarget);
+    await run(async () => {
+      const email = String(d.get("email"));
+      if (mode === "reset") {
+        await sendPasswordResetEmail(auth!, email);
+        setMessage(
+          "If an account exists, a password reset email will arrive shortly.",
+        );
+        return;
+      }
+      const password = String(d.get("password"));
+      if (mode === "signup") {
+        const result = await createUserWithEmailAndPassword(
+          auth!,
+          email,
+          password,
+        );
+        await sendEmailVerification(result.user);
+      } else await signInWithEmailAndPassword(auth!, email, password);
+    });
+  }
+  return (
+    <section className="login-layout">
+      <div>
+        <p className="eyebrow">Made for your people</p>
+        <h1>
+          Your family.
+          <br />
+          Your funny pages.
+        </h1>
+        <p>
+          Create a cast, collect your comics, and share a smile with the people
+          you love.
+        </p>
+        <p className="muted">
+          Just reading? Use the family link you were sent—no account needed.
+        </p>
+      </div>
+      <form className="paper" onSubmit={submit}>
+        <h2>
+          {mode === "signup"
+            ? "Start your collection"
+            : mode === "reset"
+              ? "Reset your password"
+              : "Welcome back"}
+        </h2>
+        <p>No ChatGPT account needed.</p>
+        {message && <p role="status">{message}</p>}
+        <label>
+          Email
+          <input name="email" type="email" autoComplete="email" required />
+        </label>
+        {mode !== "reset" && (
+          <label>
+            Password
+            <input
+              name="password"
+              type="password"
+              autoComplete={
+                mode === "signup" ? "new-password" : "current-password"
+              }
+              minLength={8}
+              required
+            />
+          </label>
+        )}
+        <button disabled={busy}>
+          {busy
+            ? "One moment…"
+            : mode === "signup"
+              ? "Create account"
+              : mode === "reset"
+                ? "Send reset email"
+                : "Sign in"}
+        </button>
+        <button
+          type="button"
+          className="quiet"
+          onClick={() => {
+            setMode(mode === "signup" ? "signin" : "signup");
+            setMessage("");
+          }}
+        >
+          {mode === "signup"
+            ? "Already have an account? Sign in"
+            : "New here? Create an account"}
+        </button>
+        {mode === "signin" && (
+          <button
+            type="button"
+            className="quiet"
+            onClick={() => setMode("reset")}
+          >
+            Forgot password?
+          </button>
+        )}
+      </form>
+    </section>
+  );
 }
-function useRows(table:string,id:string){const [data,setData]=useState<Row[]>([]),[error,setError]=useState(''),[loading,setLoading]=useState(true);async function refresh(){setLoading(true);try{setData(await rows(table,id));setError('')}catch(e){setError(errorText(e))}finally{setLoading(false)}}useEffect(()=>{void refresh()},[table,id]);return {data,error,loading,refresh};}
-function PrivateImage({bucket,path,alt}:{bucket:string;path:string;alt:string}){const [src,setSrc]=useState(''),[error,setError]=useState(false);useEffect(()=>{let active=true;setSrc('');setError(false);signedImage(bucket,path).then(s=>{if(active)setSrc(s)}).catch(()=>{if(active)setError(true)});return()=>{active=false}},[bucket,path]);return error?<p>Image unavailable. Reopen this page to try again.</p>:src?<img src={src} alt={alt}/>:<p role="status">Opening image…</p>}
-function Comics({id,onError}:{id:string;onError:(s:string)=>void}){const {data,error,loading}=useRows('episodes',id),[selected,setSelected]=useState('');useEffect(()=>{if(error)onError(error)},[error]);const comics=[...data].sort((a,b)=>b.day.localeCompare(a.day));const comic=comics.find(c=>c.id===selected)??comics[0];return loading?<p role="status">Opening comics…</p>:comic?<div className="comic-layout"><article className="paper comic"><div className="comic-heading"><p className="eyebrow">{comic.day}</p><h2>{comic.title}</h2></div><PrivateImage bucket="family-comics" path={comic.object_path} alt={comic.title}/></article><aside className="paper"><p className="eyebrow">The collection</p><h2>Your comic archive</h2>{comics.map(c=><button key={c.id} className={'archive-item '+(c.id===comic.id?'selected':'')} onClick={()=>setSelected(c.id)}>{c.title}<small>{c.day}</small></button>)}</aside></div>:<section className="empty paper"><h2>Your first funny page is still to come.</h2><p>Once your cast is approved and production is connected, your family’s comics will appear here.</p></section>}
-type Runner={run:(fn:()=>Promise<void>)=>Promise<void>;busy:boolean};
-function People({id,run,busy,onChange}:{id:string;onChange:()=>Promise<void>}&Runner){const {data,error,refresh}=useRows('people',id),photos=useRows('reference_photos',id),[editing,setEditing]=useState<Row|null>(null);async function saved(){await refresh();await photos.refresh();await onChange()}
- return <><div className="section-heading"><div><h2>The people behind the punchlines</h2><p>Start with a photo and a few details. You can add the rest later.</p></div><button onClick={()=>setEditing({})}>＋ Add person or pet</button></div>{error&&<p role="alert">{error}</p>}{editing&&<form className="paper editor" onSubmit={e=>{e.preventDefault();const f=e.currentTarget,d=new FormData(f);void run(async()=>{const value={family_id:id,name:String(d.get('name')),kind:String(d.get('kind')),relationship:String(d.get('relationship')),appearance:String(d.get('appearance')),personality:String(d.get('personality')),habits:String(d.get('habits')),interests:String(d.get('interests')),boundaries:String(d.get('boundaries')),memorial:d.get('memorial')==='on',memorial_caption:String(d.get('memorial_caption'))};const result=editing.id?await db!.from('people').update(value).eq('id',editing.id).select('id').single():await db!.from('people').insert(value).select('id').single();if(result.error)throw result.error;setEditing(null);await saved();})}}><h2>{editing.id?'Edit '+editing.name:'Meet a new cast member'}</h2><div className="form-grid"><label>Name<input name="name" defaultValue={editing.name} required maxLength={100}/></label><label>Cast member<select name="kind" defaultValue={editing.kind??'person'}><option value="person">Person</option><option value="pet">Pet</option></select></label><label>Relationship<input name="relationship" defaultValue={editing.relationship} placeholder="Mom, grandpa, family dog…"/></label><label>Appearance & clothes<textarea name="appearance" defaultValue={editing.appearance} placeholder="Favorite outfit, hairstyle, one upright ear…"/></label><label>What are they like?<textarea name="personality" defaultValue={editing.personality} placeholder="The planner? The quiet comedian?"/></label><label>Habits & favorite sayings<textarea name="habits" defaultValue={editing.habits} placeholder="What does everyone recognize about them?"/></label><label>Things they enjoy<textarea name="interests" defaultValue={editing.interests}/></label><label>Keep out of the jokes<textarea name="boundaries" defaultValue={editing.boundaries}/></label></div><label className="checkbox"><input name="memorial" type="checkbox" defaultChecked={editing.memorial}/>Remembered with love — has passed away</label><p className="muted">Remembered family members appear in a portrait or memory, rather than physically in present-day scenes.</p><label>Remembrance caption<input name="memorial_caption" defaultValue={editing.memorial_caption} placeholder="Always with us"/></label><div className="actions"><button disabled={busy}>Save cast member</button><button type="button" className="quiet" onClick={()=>setEditing(null)}>Cancel</button></div></form>}
- <div className="people-grid">{data.map(p=>{const refs=photos.data.filter(r=>r.person_id===p.id).sort((a,b)=>a.position-b.position);return <article className="paper person" key={p.id}>{refs[0]&&<PrivateImage bucket="family-references" path={refs[0].object_path} alt={'Reference for '+p.name}/>}<div className="person-heading"><h3>{p.name}</h3>{p.memorial&&<span className="badge">Always with us</span>}</div><p>{p.relationship||p.kind}</p><p className="muted">{p.appearance||'Their photo will help establish their look.'}</p><button className="quiet" onClick={()=>setEditing(p)}>Edit details →</button><label className="upload">Add reference photos · {refs.length}/6<input type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={busy||refs.length>=6} onChange={e=>{const files=Array.from(e.target.files??[]);e.target.value='';void run(async()=>{if(files.length+refs.length>6)throw new Error('Choose up to six photos in total for this cast member.');const occupied=new Set(refs.map(r=>r.position));for(const file of files){if(file.size>5*1024*1024)throw new Error('Each photo must be under 5 MB.');if(!['image/jpeg','image/png','image/webp'].includes(file.type))throw new Error('Choose a JPEG, PNG or WebP photo.');let position=0;while(occupied.has(position))position++;occupied.add(position);const path=`${id}/${p.id}/${crypto.randomUUID()}`;const uploaded=await db!.storage.from('family-references').upload(path,file,{contentType:file.type,upsert:false});if(uploaded.error)throw uploaded.error;const result=await db!.from('reference_photos').insert({family_id:id,person_id:p.id,object_path:path,position});if(result.error){await db!.storage.from('family-references').remove([path]);throw result.error;}}await saved();})}}/></label><div className="reference-list">{refs.map((r,i)=><span key={r.id}>Photo {i+1}<button className="quiet" disabled={busy} aria-label={`Remove photo ${i+1} for ${p.name}`} onClick={()=>void run(async()=>{const deleted=await db!.from('reference_photos').delete().eq('id',r.id);if(deleted.error)throw deleted.error;const removed=await db!.storage.from('family-references').remove([r.object_path]);await saved();if(removed.error)throw new Error('Reference removed from the profile; stored file cleanup needs a retry.');})}>×</button></span>)}</div><p className="muted small">For pets, include a clear photo of the named pet. Other subjects in the photo won’t become cast members.</p></article>})}</div>{!data.length&&!editing&&<section className="empty paper"><h2>Who’s in this edition?</h2><p>Add the people and pets who make this family yours.</p></section>}</>;
+function useRows(table: string, id: string) {
+  const [data, setData] = useState<Row[]>([]),
+    [error, setError] = useState(""),
+    [loading, setLoading] = useState(true);
+  async function refresh() {
+    setLoading(true);
+    try {
+      setData(await rows(table, id));
+      setError("");
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+  useEffect(() => {
+    void refresh();
+  }, [table, id]);
+  return { data, error, loading, refresh };
 }
-function StoryJar({id,run,busy}:{id:string}&Runner){const {data,error,refresh}=useRows('story_moments',id);return <><section className="section-heading"><div><h2>Little things worth saving</h2><p>A phrase, a habit, a tiny everyday moment. No punchline required.</p></div></section><form className="paper" onSubmit={e=>{e.preventDefault();const form=e.currentTarget,text=String(new FormData(form).get('text'));void run(async()=>{const result=await db!.from('story_moments').insert({family_id:id,text});if(result.error)throw result.error;form.reset();await refresh();})}}><label>What made you smile?<textarea required maxLength={4000} name="text" placeholder="Who always says they’re ready, then can’t find their shoes?"/></label><button disabled={busy}>Add to the story jar</button></form>{error&&<p role="alert">{error}</p>}<div className="moments">{data.map(m=><article className="paper" key={m.id}><p>{m.text}</p><button className="quiet" disabled={busy} onClick={()=>void run(async()=>{const r=await db!.from('story_moments').delete().eq('id',m.id);if(r.error)throw r.error;await refresh()})}>Remove</button></article>)}</div></>}
-function Cast({family,owner,run,busy}:{family:Row;owner:boolean}&Runner){const casts=useRows('cast_versions',family.id),jobs=useRows('cast_jobs',family.id);const cast=[...casts.data].sort((a,b)=>b.created_at.localeCompare(a.created_at))[0];const current=cast?.visual_revision===family.visual_revision;return <><div className="section-heading"><div><h2>A familiar face, before the first funny page.</h2><p>Review everyone’s look before they star in a comic.</p></div></div>{(casts.error||jobs.error)&&<p role="alert">{casts.error||jobs.error}</p>}{cast?<section className="paper"><span className="badge">{!current?'Needs a refresh':cast.approved_at?'Approved':'Ready for your review'}</span><PrivateImage bucket="family-comics" path={cast.object_path} alt="Family cast preview"/>{cast.missing?.length>0&&<p>Missing: {cast.missing.join(', ')}</p>}{owner&&current&&!cast.approved_at&&!cast.missing?.length&&<button disabled={busy} onClick={()=>void run(async()=>{await rpc('approve_cast',{cast_id:cast.id});await casts.refresh()})}>Approve this cast</button>}</section>:<section className="paper empty"><h2>Your cast preview belongs here.</h2><p>Saving people and reference photos queues the latest look for a cast preview.</p><p className="badge">Waiting for the production connection</p></section>}<p className="muted">The new app’s generation runner is not connected yet. Queued work will stay queued until that setup is complete.</p>{jobs.data.filter(j=>j.visual_revision===family.visual_revision).map(j=><p key={j.id}>Current revision: {j.state} · {j.attempts}/3 attempts</p>)}</>}
-function Settings({family,run,busy,onChange}:{family:Row;onChange:()=>Promise<void>}&Runner){const [link,setLink]=useState(''),[invites,setInvites]=useState<Row[]>([]),[error,setError]=useState('');async function load(){try{setInvites(await rpc('list_invitations',{fid:family.id}))}catch(e){setError(errorText(e))}}useEffect(()=>{void load()},[family.id]);return <div className="settings-grid"><form className="paper" onSubmit={e=>{e.preventDefault();const d=new FormData(e.currentTarget);void run(async()=>{const r=await db!.from('families').update(Object.fromEntries(d.entries())).eq('id',family.id).select('id').single();if(r.error)throw r.error;await onChange();})}}><h2>This family edition</h2><label>Name<input required maxLength={100} name="name" defaultValue={family.name}/></label><label>How everyone fits together<textarea name="relationships" defaultValue={family.relationships}/></label><label>Humor boundaries<textarea name="boundaries" defaultValue={family.boundaries}/></label><label>Comic tone<input name="tone" defaultValue={family.tone}/></label><label>Anything to adjust in the cast?<textarea name="cast_notes" defaultValue={family.cast_notes}/></label><p className="muted">Visual changes queue a new preview for your approval.</p><button disabled={busy}>Save family details</button></form><section className="paper"><h2>Invite your people</h2><p>Contributors help with people and story ideas. Readers only see comics. Each invitation works once and expires in seven days.</p><form onSubmit={e=>{e.preventDefault();const role=new FormData(e.currentTarget).get('role');void run(async()=>{const bytes=crypto.getRandomValues(new Uint8Array(32));const token=Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join('');await rpc('create_invitation',{fid:family.id,member_role:role,token});setLink(location.origin+'/#invite='+token);await load();})}}><label>Invite as<select name="role"><option value="reader">Reader</option><option value="contributor">Contributor</option></select></label><button disabled={busy}>Create invitation link</button></form>{link&&<div className="notice"><label>Copy this link now<input value={link} readOnly onFocus={e=>e.currentTarget.select()}/></label><button onClick={()=>void run(async()=>{await navigator.clipboard.writeText(link)})}>Copy invitation</button><p className="small">Only share with the person you’re inviting. This link grants access to this family.</p></div>}{error&&<p role="alert">{error}</p>}{invites.map(i=><div className="invitation-row" key={i.id}><span>{i.role} · {i.used_at?'Accepted':i.revoked_at?'Revoked':new Date(i.expires_at)<new Date()?'Expired':'Pending'}</span>{!i.used_at&&!i.revoked_at&&<button className="quiet" disabled={busy} onClick={()=>void run(async()=>{await rpc('revoke_invitation',{invitation_id:i.id});setLink('');await load()})}>Revoke</button>}</div>)}<hr/><h3>Comics without an account</h3><p>Guest comic links are still being connected in this new app. Existing shared links continue to work.</p><hr/><h3>Morning production</h3><p>{family.production_enabled?'Enabled':'Paused'} · America/Los_Angeles</p>{family.production_enabled&&<button disabled={busy} onClick={()=>void run(async()=>{await rpc('pause_production',{fid:family.id});await onChange()})}>Pause production</button>}<p className="muted">Production stays paused here until the new runner is connected.</p></section></div>}
-createRoot(document.getElementById('root')!).render(<React.StrictMode><App/></React.StrictMode>);
+function PrivateImage({
+  bucket,
+  path,
+  alt,
+}: {
+  bucket: string;
+  path: string;
+  alt: string;
+}) {
+  const [src, setSrc] = useState(""),
+    [error, setError] = useState(false);
+  useEffect(() => {
+    let active = true;
+    setSrc("");
+    setError(false);
+    signedImage(bucket, path)
+      .then((s) => {
+        if (active) setSrc(s);
+      })
+      .catch(() => {
+        if (active) setError(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [bucket, path]);
+  return error ? (
+    <p>Image unavailable. Reopen this page to try again.</p>
+  ) : src ? (
+    <img src={src} alt={alt} />
+  ) : (
+    <p role="status">Opening image…</p>
+  );
+}
+function Comics({ id, onError }: { id: string; onError: (s: string) => void }) {
+  const { data, error, loading } = useRows("episodes", id),
+    [selected, setSelected] = useState("");
+  useEffect(() => {
+    if (error) onError(error);
+  }, [error]);
+  const comics = [...data].sort((a, b) => b.day.localeCompare(a.day));
+  const comic = comics.find((c) => c.id === selected) ?? comics[0];
+  return loading ? (
+    <p role="status">Opening comics…</p>
+  ) : comic ? (
+    <div className="comic-layout">
+      <article className="paper comic">
+        <div className="comic-heading">
+          <p className="eyebrow">{comic.day}</p>
+          <h2>{comic.title}</h2>
+        </div>
+        <PrivateImage
+          bucket="family-comics"
+          path={comic.object_path}
+          alt={comic.title}
+        />
+      </article>
+      <aside className="paper">
+        <p className="eyebrow">The collection</p>
+        <h2>Your comic archive</h2>
+        {comics.map((c) => (
+          <button
+            key={c.id}
+            className={"archive-item " + (c.id === comic.id ? "selected" : "")}
+            onClick={() => setSelected(c.id)}
+          >
+            {c.title}
+            <small>{c.day}</small>
+          </button>
+        ))}
+      </aside>
+    </div>
+  ) : (
+    <section className="empty paper">
+      <h2>Your first funny page is still to come.</h2>
+      <p>
+        Add your people and photos, approve your cast, and turn on daily comics.
+        New episodes appear here after morning generation finishes.
+      </p>
+    </section>
+  );
+}
+type Runner = {
+  run: (fn: () => Promise<void>) => Promise<void>;
+  busy: boolean;
+};
+function People({
+  id,
+  run,
+  busy,
+  onChange,
+}: { id: string; onChange: () => Promise<void> } & Runner) {
+  const { data, error, refresh } = useRows("people", id),
+    photos = useRows("reference_photos", id),
+    [editing, setEditing] = useState<Row | null>(null);
+  async function saved() {
+    await refresh();
+    await photos.refresh();
+    await onChange();
+  }
+  return (
+    <>
+      <div className="section-heading">
+        <div>
+          <h2>The people behind the punchlines</h2>
+          <p>
+            Start with a photo and a few details. You can add the rest later.
+          </p>
+        </div>
+        <button onClick={() => setEditing({})}>＋ Add person or pet</button>
+      </div>
+      {error && <p role="alert">{error}</p>}
+      {editing && (
+        <form
+          className="paper editor"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const f = e.currentTarget,
+              d = new FormData(f);
+            void run(async () => {
+              const value = {
+                family_id: id,
+                name: String(d.get("name")),
+                kind: String(d.get("kind")),
+                relationship: String(d.get("relationship")),
+                appearance: String(d.get("appearance")),
+                personality: String(d.get("personality")),
+                habits: String(d.get("habits")),
+                interests: String(d.get("interests")),
+                boundaries: String(d.get("boundaries")),
+                memorial: d.get("memorial") === "on",
+                memorial_caption: String(d.get("memorial_caption")),
+              };
+              const result = editing.id
+                ? await db!
+                    .from("people")
+                    .update(value)
+                    .eq("id", editing.id)
+                    .select("id")
+                    .single()
+                : await db!.from("people").insert(value).select("id").single();
+              if (result.error) throw result.error;
+              setEditing(null);
+              await saved();
+            });
+          }}
+        >
+          <h2>
+            {editing.id ? "Edit " + editing.name : "Meet a new cast member"}
+          </h2>
+          <div className="form-grid">
+            <label>
+              Name
+              <input
+                name="name"
+                defaultValue={editing.name}
+                required
+                maxLength={100}
+              />
+            </label>
+            <label>
+              Cast member
+              <select name="kind" defaultValue={editing.kind ?? "person"}>
+                <option value="person">Person</option>
+                <option value="pet">Pet</option>
+              </select>
+            </label>
+            <label>
+              Relationship
+              <input
+                name="relationship"
+                defaultValue={editing.relationship}
+                placeholder="Mom, grandpa, family dog…"
+              />
+            </label>
+            <label>
+              Appearance & clothes
+              <textarea
+                name="appearance"
+                defaultValue={editing.appearance}
+                placeholder="Favorite outfit, hairstyle, one upright ear…"
+              />
+            </label>
+            <label>
+              What are they like?
+              <textarea
+                name="personality"
+                defaultValue={editing.personality}
+                placeholder="The planner? The quiet comedian?"
+              />
+            </label>
+            <label>
+              Habits & favorite sayings
+              <textarea
+                name="habits"
+                defaultValue={editing.habits}
+                placeholder="What does everyone recognize about them?"
+              />
+            </label>
+            <label>
+              Things they enjoy
+              <textarea name="interests" defaultValue={editing.interests} />
+            </label>
+            <label>
+              Keep out of the jokes
+              <textarea name="boundaries" defaultValue={editing.boundaries} />
+            </label>
+          </div>
+          <label className="checkbox">
+            <input
+              name="memorial"
+              type="checkbox"
+              defaultChecked={editing.memorial}
+            />
+            Remembered with love — has passed away
+          </label>
+          <p className="muted">
+            Remembered family members appear in a portrait or memory, rather
+            than physically in present-day scenes.
+          </p>
+          <label>
+            Remembrance caption
+            <input
+              name="memorial_caption"
+              defaultValue={editing.memorial_caption}
+              placeholder="Always with us"
+            />
+          </label>
+          <div className="actions">
+            <button disabled={busy}>Save cast member</button>
+            <button
+              type="button"
+              className="quiet"
+              onClick={() => setEditing(null)}
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+      <div className="people-grid">
+        {data.map((p) => {
+          const refs = photos.data
+            .filter((r) => r.person_id === p.id)
+            .sort((a, b) => a.position - b.position);
+          return (
+            <article className="paper person" key={p.id}>
+              {refs[0] && (
+                <PrivateImage
+                  bucket="family-references"
+                  path={refs[0].object_path}
+                  alt={"Reference for " + p.name}
+                />
+              )}
+              <div className="person-heading">
+                <h3>{p.name}</h3>
+                {p.memorial && <span className="badge">Always with us</span>}
+              </div>
+              <p>{p.relationship || p.kind}</p>
+              <p className="muted">
+                {p.appearance || "Their photo will help establish their look."}
+              </p>
+              <button className="quiet" onClick={() => setEditing(p)}>
+                Edit details →
+              </button>
+              <GooglePhotos familyId={id} personId={p.id} remaining={6-refs.length} onSaved={saved}/>
+              <label className="upload">
+                Add reference photos · {refs.length}/6
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  multiple
+                  disabled={busy || refs.length >= 6}
+                  onChange={(e) => {
+                    const files = Array.from(e.target.files ?? []);
+                    e.target.value = "";
+                    void run(async () => {
+                      if (files.length + refs.length > 6)
+                        throw new Error(
+                          "Choose up to six photos in total for this cast member.",
+                        );
+                      const occupied = new Set(refs.map((r) => r.position));
+                      for (const file of files) {
+                        if (file.size > 5 * 1024 * 1024)
+                          throw new Error("Each photo must be under 5 MB.");
+                        if (
+                          !["image/jpeg", "image/png", "image/webp"].includes(
+                            file.type,
+                          )
+                        )
+                          throw new Error("Choose a JPEG, PNG or WebP photo.");
+                        let position = 0;
+                        while (occupied.has(position)) position++;
+                        occupied.add(position);
+                        const path = `${id}/${p.id}/${crypto.randomUUID()}`;
+                        const uploaded = await db!.storage
+                          .from("family-references")
+                          .upload(path, file, {
+                            contentType: file.type,
+                            upsert: false,
+                          });
+                        if (uploaded.error) throw uploaded.error;
+                        const result = await db!
+                          .from("reference_photos")
+                          .insert({
+                            family_id: id,
+                            person_id: p.id,
+                            object_path: path,
+                            position,
+                          });
+                        if (result.error) {
+                          await db!.storage
+                            .from("family-references")
+                            .remove([path]);
+                          throw result.error;
+                        }
+                      }
+                      await saved();
+                    });
+                  }}
+                />
+              </label>
+              <div className="reference-list">
+                {refs.map((r, i) => (
+                  <span key={r.id}>
+                    Photo {i + 1}
+                    <button
+                      className="quiet"
+                      disabled={busy}
+                      aria-label={`Remove photo ${i + 1} for ${p.name}`}
+                      onClick={() =>
+                        void run(async () => {
+                          const deleted = await db!
+                            .from("reference_photos")
+                            .delete()
+                            .eq("id", r.id);
+                          if (deleted.error) throw deleted.error;
+                          const removed = await db!.storage
+                            .from("family-references")
+                            .remove([r.object_path]);
+                          await saved();
+                          if (removed.error)
+                            throw new Error(
+                              "Reference removed from the profile; stored file cleanup needs a retry.",
+                            );
+                        })
+                      }
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+              <p className="muted small">
+                For pets, include a clear photo of the named pet. Other subjects
+                in the photo won’t become cast members.
+              </p>
+            </article>
+          );
+        })}
+      </div>
+      {!data.length && !editing && (
+        <section className="empty paper">
+          <h2>Who’s in this edition?</h2>
+          <p>Add the people and pets who make this family yours.</p>
+        </section>
+      )}
+    </>
+  );
+}
+function StoryJar({ id, run, busy }: { id: string } & Runner) {
+  const { data, error, refresh } = useRows("story_moments", id);
+  return (
+    <>
+      <section className="section-heading">
+        <div>
+          <h2>Little things worth saving</h2>
+          <p>
+            A phrase, a habit, a tiny everyday moment. No punchline required.
+          </p>
+        </div>
+      </section>
+      <form
+        className="paper"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const form = e.currentTarget,
+            text = String(new FormData(form).get("text"));
+          void run(async () => {
+            const result = await db!
+              .from("story_moments")
+              .insert({ family_id: id, text });
+            if (result.error) throw result.error;
+            form.reset();
+            await refresh();
+          });
+        }}
+      >
+        <label>
+          What made you smile?
+          <textarea
+            required
+            maxLength={4000}
+            name="text"
+            placeholder="Who always says they’re ready, then can’t find their shoes?"
+          />
+        </label>
+        <button disabled={busy}>Add to the story jar</button>
+      </form>
+      {error && <p role="alert">{error}</p>}
+      <div className="moments">
+        {data.map((m) => (
+          <article className="paper" key={m.id}>
+            <p>{m.text}</p>
+            <button
+              className="quiet"
+              disabled={busy}
+              onClick={() =>
+                void run(async () => {
+                  const r = await db!
+                    .from("story_moments")
+                    .delete()
+                    .eq("id", m.id);
+                  if (r.error) throw r.error;
+                  await refresh();
+                })
+              }
+            >
+              Remove
+            </button>
+          </article>
+        ))}
+      </div>
+    </>
+  );
+}
+function Cast({
+  family,
+  owner,
+  run,
+  busy,
+  onChange,
+}: { family: Row; owner: boolean;onChange:()=>Promise<void> } & Runner) {
+  const casts = useRows("cast_versions", family.id),
+    jobs = useRows("cast_jobs", family.id);
+  const cast = [...casts.data].sort((a, b) =>
+    b.created_at.localeCompare(a.created_at),
+  )[0];
+  const current = cast?.visual_revision === family.visual_revision;
+  const people=useRows('people',family.id),refs=useRows('reference_photos',family.id);
+  const withoutPhotos=people.data.filter(p=>!refs.data.some(r=>r.person_id===p.id));
+  const ready=current&&cast?.approved_at&&!cast?.missing?.length;
+  return (
+    <>
+      <div className="section-heading">
+        <div>
+          <h2>A familiar face, before the first funny page.</h2>
+          <p>Review everyone’s look before they star in a comic.</p>
+        </div>
+      </div>
+      {(casts.error || jobs.error) && (
+        <p role="alert">{casts.error || jobs.error}</p>
+      )}
+      {cast ? (
+        <section className="paper">
+          <span className="badge">
+            {!current
+              ? "Needs a refresh"
+              : cast.approved_at
+                ? "Approved"
+                : "Ready for your review"}
+          </span>
+          <PrivateImage
+            bucket="family-comics"
+            path={cast.object_path}
+            alt="Family cast preview"
+          />
+          {cast.missing?.length > 0 && (
+            <p>Missing: {cast.missing.join(", ")}</p>
+          )}
+          {owner && current && !cast.approved_at && !cast.missing?.length && (
+            <button
+              disabled={busy}
+              onClick={() =>
+                void run(async () => {
+                  await rpc("approve_cast", { cast_id: cast.id });
+                  await casts.refresh();
+                })
+              }
+            >
+              Approve this cast
+            </button>
+          )}
+          {owner&&ready&&!mirroredFamilies.has(family.id)&&!family.production_enabled&&<button disabled={busy} onClick={()=>void run(async()=>{await rpc('enable_production',{fid:family.id});await onChange()})}>Start daily comics</button>}
+        </section>
+      ) : (
+        <section className="paper empty">
+          <h2>Your cast preview belongs here.</h2>
+          <p>
+            Saving people and reference photos queues the latest look for a cast
+            preview.
+          </p>
+          <p className="badge">{!people.data.length?'Add your first cast member':withoutPhotos.length?'Add a photo for each cast member':'Queued for the next cast check'}</p>
+          {!!withoutPhotos.length&&<p>Still need photos: {withoutPhotos.map(p=>p.name).join(', ')}</p>}
+        </section>
+      )}
+      <p className="muted">
+        Cast previews are prepared each morning around 7 a.m. Pacific. Come back to review the draft before starting daily comics.
+      </p>
+      {jobs.data
+        .filter((j) => j.visual_revision === family.visual_revision)
+        .map((j) => (
+          <p key={j.id}>
+            {j.state==='processing'?'Your cast preview is being drawn.':j.state==='ready'?'Your cast preview is ready to review.':j.state==='failed'?'We couldn’t finish your cast preview. Check your reference photos; the next morning check can retry while attempts remain.':'Your latest photos and details are saved for the next morning cast check.'}
+          </p>
+        ))}
+    </>
+  );
+}
+function Settings({
+  family,
+  run,
+  busy,
+  onChange,
+}: { family: Row; onChange: () => Promise<void> } & Runner) {
+  const [link, setLink] = useState(""),
+    [invites, setInvites] = useState<Row[]>([]),
+    [error, setError] = useState("");
+  async function load() {
+    try {
+      setInvites(await rpc("list_invitations", { fid: family.id }));
+    } catch (e) {
+      setError(errorText(e));
+    }
+  }
+  useEffect(() => {
+    void load();
+  }, [family.id]);
+  return (
+    <div className="settings-grid">
+      <form
+        className="paper"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const d = new FormData(e.currentTarget);
+          void run(async () => {
+            const r = await db!
+              .from("families")
+              .update(Object.fromEntries(d.entries()))
+              .eq("id", family.id)
+              .select("id")
+              .single();
+            if (r.error) throw r.error;
+            await onChange();
+          });
+        }}
+      >
+        <h2>This family edition</h2>
+        <label>
+          Name
+          <input
+            required
+            maxLength={100}
+            name="name"
+            defaultValue={family.name}
+          />
+        </label>
+        <label>
+          How everyone fits together
+          <textarea name="relationships" defaultValue={family.relationships} />
+        </label>
+        <label>
+          Humor boundaries
+          <textarea name="boundaries" defaultValue={family.boundaries} />
+        </label>
+        <label>
+          Comic tone
+          <input name="tone" defaultValue={family.tone} />
+        </label>
+        <label>
+          Anything to adjust in the cast?
+          <textarea name="cast_notes" defaultValue={family.cast_notes} />
+        </label>
+        <p className="muted">
+          Visual changes queue a new preview for your approval.
+        </p>
+        <button disabled={busy}>Save family details</button>
+      </form>
+      <section className="paper">
+        <h2>Invite your people</h2>
+        <p>
+          Contributors help with people and story ideas. Readers only see
+          comics. Each invitation works once and expires in seven days.
+        </p>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const role = new FormData(e.currentTarget).get("role");
+            void run(async () => {
+              const bytes = crypto.getRandomValues(new Uint8Array(32));
+              const token = Array.from(bytes, (b) =>
+                b.toString(16).padStart(2, "0"),
+              ).join("");
+              await rpc("create_invitation", {
+                fid: family.id,
+                member_role: role,
+                token,
+              });
+              setLink(location.origin + "/#invite=" + token);
+              await load();
+            });
+          }}
+        >
+          <label>
+            Invite as
+            <select name="role">
+              <option value="reader">Reader</option>
+              <option value="contributor">Contributor</option>
+            </select>
+          </label>
+          <button disabled={busy}>Create invitation link</button>
+        </form>
+        {link && (
+          <div className="notice">
+            <label>
+              Copy this link now
+              <input
+                value={link}
+                readOnly
+                onFocus={(e) => e.currentTarget.select()}
+              />
+            </label>
+            <button
+              onClick={() =>
+                void run(async () => {
+                  await navigator.clipboard.writeText(link);
+                })
+              }
+            >
+              Copy invitation
+            </button>
+            <p className="small">
+              Only share with the person you’re inviting. This link grants
+              access to this family.
+            </p>
+          </div>
+        )}
+        {error && <p role="alert">{error}</p>}
+        {invites.map((i) => (
+          <div className="invitation-row" key={i.id}>
+            <span>
+              {i.role} ·{" "}
+              {i.used_at
+                ? "Accepted"
+                : i.revoked_at
+                  ? "Revoked"
+                  : new Date(i.expires_at) < new Date()
+                    ? "Expired"
+                    : "Pending"}
+            </span>
+            {!i.used_at && !i.revoked_at && (
+              <button
+                className="quiet"
+                disabled={busy}
+                onClick={() =>
+                  void run(async () => {
+                    await rpc("revoke_invitation", { invitation_id: i.id });
+                    setLink("");
+                    await load();
+                  })
+                }
+              >
+                Revoke
+              </button>
+            )}
+          </div>
+        ))}
+        <hr />
+        <h3>Comics without an account</h3>
+        <p>
+          Guest comic links are still being connected in this new app. Existing
+          shared links continue to work.
+        </p>
+        <hr />
+        <h3>Morning production</h3>
+        <p>
+          {mirroredFamilies.has(family.id)?'Daily delivery from original app':family.production_enabled ? "Enabled" : "Paused"} ·
+          America/Los_Angeles
+        </p>
+        {family.production_enabled && (
+          <button
+            disabled={busy}
+            onClick={() =>
+              void run(async () => {
+                await rpc("pause_production", { fid: family.id });
+                await onChange();
+              })
+            }
+          >
+            Pause production
+          </button>
+        )}
+        <p className="muted">
+          {mirroredFamilies.has(family.id)?'This collection receives its daily comics from the original app.':'After approving your cast, choose Start daily comics on the Cast tab. Comics are generated each morning around 8 a.m. Pacific and appear after generation finishes.'}
+        </p>
+      </section>
+    </div>
+  );
+}
+createRoot(document.getElementById("root")!).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
+);

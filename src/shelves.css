@@ -29,3 +29,4 @@ button.secondary{color:#42233b;background:transparent;border:1px solid #7a4c4f;b
 .shelf-create p{color:#78695c;margin-top:20px;font-size:14px}
 @media(max-width:700px){header{padding:18px;gap:12px}.brand{font-size:19px}header>.quiet{flex:none;padding:10px 8px}main{padding:20px 16px 44px}.shelves-grid{grid-template-columns:1fr;gap:25px;max-width:460px}.shelves-welcome{padding-top:6px}.shelves-welcome h1{font-size:43px}.shelves-welcome p{font-size:16px}.shelves-welcome .eyebrow{font-size:10px}.shelf-card-body h2{font-size:29px}}
 @media(prefers-reduced-motion:reduce){.shelf-art img{transition:none}}
+.google-photos{margin-top:16px}.google-photos button.secondary,.photo-picker-link{width:100%;display:block;text-align:center}.photo-picker-link{padding:12px;margin:10px 0;background:#e9e9d4;border-radius:8px;font-weight:600}.google-photos p{margin:10px 0;overflow-wrap:anywhere}

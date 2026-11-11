@@ -1,6 +1,6 @@
 # Staged standalone production
 
-Parallel delivery is authorized. The existing daily comic task generates once on the original Site and mirrors each saved episode into the standalone app. Original Site production, guest-reader delivery and cadence remain active. Standalone independent generation remains paused to prevent duplicates. The updated automation contains exact source/destination family mappings and the complete single-use transfer procedure. Every run must catch up missing archived episodes even if generation is skipped.
+Parallel delivery is authorized. The existing daily comic task generates once on the original Site and mirrors each saved episode into the standalone app. Original Site production, guest-reader delivery and cadence remain active. New standalone families now have independent cast and episode production through the same morning tasks. Only the three legacy mirrored family IDs remain excluded from independent generation. Every run must catch up missing legacy archived episodes even if generation is skipped.
 
 ## Working connection
 
@@ -29,3 +29,15 @@ Live PNG upload/download matched byte-for-byte. Replayed capability and unauthen
 ## Independent generation cutover
 
 Daily comic delivery already mirrors original episodes into the standalone app. Profiles and cast edits are not bidirectionally synchronized; use the original Site for production inputs during this overlap. To later move independent generation to the standalone app, update the existing daily cast and comic automation prompts to use standalone data, preserving cadence and all humor/likeness requirements. Enable only manager-approved family series through enable_production. Do not switch until the owner requests it. Existing old-site reader links still depend on the original Site; their continued updates need a separately verified mirror before old production is retired.
+
+## New public-app families (authorized November 10, 2026)
+
+The 7 a.m. Pacific cast task and 8 a.m. Pacific comic task now query standalone data on every run, even when the original Site has no work. Exclude legacy mirrored IDs a558ec80-f1ee-4094-9bc2-689d0e54f063, 94c3f471-bd68-4390-89fe-74b250b40754 and e47f2cc4-c03b-4537-a08a-729c94fe41cf from standalone generation. Preserve all legacy delivery and sharing.
+
+For every other family, prepare current queued cast jobs (including paused families) only once every named member has a reference or an approved previous likeness. Keep missing-reference jobs unclaimed. Respect the three-attempt cap and active claims. Use the trusted runner/media operations above. Managers review drafts; never auto-approve or auto-enable production. The Cast screen exposes Start daily comics after approval. Only enabled families with complete current approved casts receive an episode. Each family/day is unique. A family created after the day's cast check waits for the next morning check. Do not present queued work as completed.
+
+`tests/public-family-flow.sql` verifies the full database workflow and outsider privacy in a rollback transaction. It uses synthetic media paths and does not prove image generation or a real user's Google consent flow. Missing/forged Google-import JWTs return HTTP401. The Google import handler uses pinned JOSE to verify Firebase signatures/issuer/audience/expiry/verified role, then performs all profile/storage writes under that user's database policies. It has no administrative key. Google access tokens remain in memory and are not logged or persisted.
+
+## Google Photos launch prerequisites
+
+The app and `google-photo-import` handler support multi-photo Picker sessions, up to six references per person. File upload continues to work independently. The Google Cloud owner must configure the existing web OAuth client to authorize `https://family-funnies.pages.dev`, configure the Picker scope, and complete Google's audience/publishing/verification requirements for external users. Do not claim arbitrary-user Google Photos readiness until an external account has completed the real consent and import flow. Changes to Google-owned settings require access to the owner's Google Cloud console; this repository cannot grant them. See `GOOGLE-PHOTOS-SETUP.md`.
