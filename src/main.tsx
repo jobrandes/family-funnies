@@ -394,6 +394,7 @@ function App() {
       </main>
       <footer>
         Little stories. A lot of love.
+        <span><a href="/privacy.html">Privacy policy</a> · <a href="/terms.html">Terms of service</a></span>
         <span>Fictional, affectionate family comedy.</span>
       </footer>
     </>
