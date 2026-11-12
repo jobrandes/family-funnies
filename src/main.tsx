@@ -21,6 +21,8 @@ import {
 import "./style.css";
 import "./shelves.css";
 import {GooglePhotos} from './google-photos';
+import {FamilyWizard} from './family-wizard';
+import {familyStatus} from './family-status.mjs';
 const mirroredFamilies=new Set(['a558ec80-f1ee-4094-9bc2-689d0e54f063','94c3f471-bd68-4390-89fe-74b250b40754','e47f2cc4-c03b-4537-a08a-729c94fe41cf']);
 type Row = Record<string, any>;
 const errorText = (e: unknown) =>
@@ -41,6 +43,7 @@ function App() {
     [busy, setBusy] = useState(false),
     [newFamily, setNewFamily] = useState(false);
   const [memberships, setMemberships] = useState<Row[]>([]);
+  const [wizardId,setWizardId]=useState<string|null>(null);
   const [collectionLoading,setCollectionLoading]=useState(true);
   useEffect(() => {
     if (!auth) {
@@ -198,46 +201,6 @@ function App() {
                     personality.
                   </p>
                 </section>
-                {newFamily && (
-                  <form
-                    className="paper narrow"
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      const form = e.currentTarget;
-                      void act(async () => {
-                        const id = await rpc("create_family", {
-                          family_name: new FormData(form).get("name"),
-                        });
-                        await refresh();
-                        setFamilyId(id);
-                        setTab("People & pets");
-                        setNewFamily(false);
-                      });
-                    }}
-                  >
-                    <h2>Start a new family edition</h2>
-                    <label>
-                      What would you like to call it?
-                      <input
-                        name="name"
-                        required
-                        maxLength={100}
-                        placeholder="Our house"
-                        autoFocus
-                      />
-                    </label>
-                    <div className="actions">
-                      <button disabled={busy}>Create family</button>
-                      <button
-                        type="button"
-                        className="quiet"
-                        onClick={() => setNewFamily(false)}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </form>
-                )}
                 <FamilyShelves
                   families={families}
                   memberships={memberships}
@@ -247,7 +210,9 @@ function App() {
                     setTab(section);
                   }}
                   onError={setError}
+                  resume={(id)=>{setWizardId(id);setNewFamily(true)}}
                 />
+                <FamilyTrash run={act} busy={busy} onChange={refresh}/>
                 {!!families.length && (
                   <div className="shelf-create">
                     <button
@@ -320,6 +285,7 @@ function App() {
                     </button>
                   ))}
                 </nav>
+                {role==='owner'&&family.onboarding_step>0&&family.onboarding_step<5&&<div className="setup-resume"><span>Your family setup is saved. Continue where you left off.</span><button onClick={()=>{setWizardId(family.id);setNewFamily(true)}}>Continue setup →</button></div>}
                 {tab === "Comics" && (
                   <Comics id={family.id} onError={setError} />
                 )}
@@ -329,6 +295,7 @@ function App() {
                     run={act}
                     busy={busy}
                     onChange={refresh}
+                    owner={role==='owner'}
                   />
                 )}
                 {tab === "Story jar" && (
@@ -356,6 +323,7 @@ function App() {
           </>
         )}
       </main>
+      {newFamily&&user?.emailVerified&&<FamilyWizard initialId={wizardId} onClose={()=>{setNewFamily(false);setWizardId(null)}} onChanged={refresh} onComplete={(id)=>{setNewFamily(false);setWizardId(null);setFamilyId(id);setTab('Cast')}} renderPeople={(id,stage,tools)=><People id={id} stage={stage} owner run={tools.run} busy={tools.busy} onChange={tools.refresh}/>}/>}
       <footer>
         Little stories. A lot of love.
         <span><a href="/privacy.html">Privacy policy</a> · <a href="/terms.html">Terms of service</a></span>
@@ -370,25 +338,28 @@ function FamilyShelves({
   actor,
   open,
   onError,
+  resume,
 }: {
   families: Row[];
   memberships: Row[];
   actor: string;
   open: (id: string, section: string) => void;
   onError: (message: string) => void;
+  resume:(id:string)=>void;
 }) {
   const [details, setDetails] = useState<{
     people: Row[];
     casts: Row[];
     episodes: Row[];
+    jobs:Row[];
   } | null>(null);
   useEffect(() => {
     let active = true;
     setDetails(null);
     if (!families.length) return;
-    Promise.all([rows("people"), rows("cast_versions"), rows("episodes")])
-      .then(([people, casts, episodes]) => {
-        if (active) setDetails({ people, casts, episodes });
+    Promise.all([rows("people"), rows("cast_versions"), rows("episodes"),rows('cast_jobs')])
+      .then(([people, casts, episodes,jobs]) => {
+        if (active) setDetails({ people, casts, episodes,jobs });
       })
       .catch((e) => {
         if (active) onError(errorText(e));
@@ -417,11 +388,7 @@ function FamilyShelves({
         const role = memberships.find(
           (m) => m.family_id === f.id && m.actor_id === actor,
         )?.role;
-        const review =
-          cast &&
-          (!cast.approved_at ||
-            cast.visual_revision !== f.visual_revision ||
-            cast.missing?.length);
+        const job=details?.jobs.find(j=>j.family_id===f.id&&j.visual_revision===f.visual_revision);
         return (
           <article className="family-shelf" key={f.id}>
             <button
@@ -455,17 +422,7 @@ function FamilyShelves({
                   "shelf-badge " + (latest?.day === today ? "new" : "")
                 }
               >
-                {!details
-                  ? "Opening collection…"
-                  : latest?.day === today
-                    ? "✦ New today"
-                    : review
-                      ? "Cast review needed"
-                      : latest
-                        ? "Your comic collection"
-                        : f.production_enabled
-                          ? "Daily comics on"
-                          : "Setup / paused"}
+                {!details?"Opening collection…":familyStatus(f,cast,job,latest,today,role)}
               </span>
               <p className="shelf-latest">
                 {latest ? (
@@ -479,6 +436,7 @@ function FamilyShelves({
               <button onClick={() => open(f.id, "Comics")}>
                 Read comics →
               </button>
+              {role==='owner'&&f.onboarding_step>0&&f.onboarding_step<5&&<button className="secondary" onClick={()=>resume(f.id)}>Continue setup →</button>}
               {role && role !== "reader" && (
                 <button
                   className="secondary"
@@ -752,10 +710,13 @@ function People({
   run,
   busy,
   onChange,
-}: { id: string; onChange: () => Promise<void> } & Runner) {
+  stage,
+  owner=false,
+}: { id: string; onChange: () => Promise<void>;stage?:'members'|'photos';owner?:boolean } & Runner) {
   const { data, error, refresh } = useRows("people", id),
     photos = useRows("reference_photos", id),
     [editing, setEditing] = useState<Row | null>(null);
+  const [removing,setRemoving]=useState<string|null>(null),[confirmation,setConfirmation]=useState('');
   async function saved() {
     await refresh();
     await photos.refresh();
@@ -765,12 +726,12 @@ function People({
     <>
       <div className="section-heading">
         <div>
-          <h2>The people behind the punchlines</h2>
+          <h2>{stage==='photos'?'A reference for everyone':'The people behind the punchlines'}</h2>
           <p>
             Start with a photo and a few details. You can add the rest later.
           </p>
         </div>
-        <button onClick={() => setEditing({})}>＋ Add person or pet</button>
+        {stage!=='photos'&&<button onClick={() => setEditing({})}>＋ Add person or pet</button>}
       </div>
       {error && <p role="alert">{error}</p>}
       {editing && (
@@ -786,11 +747,11 @@ function People({
                 name: String(d.get("name")),
                 kind: String(d.get("kind")),
                 relationship: String(d.get("relationship")),
-                appearance: String(d.get("appearance")),
-                personality: String(d.get("personality")),
-                habits: String(d.get("habits")),
-                interests: String(d.get("interests")),
-                boundaries: String(d.get("boundaries")),
+                appearance: d.has('appearance')?String(d.get("appearance")):editing.appearance||'',
+                personality: d.has('personality')?String(d.get("personality")):editing.personality||'',
+                habits: d.has('habits')?String(d.get("habits")):editing.habits||'',
+                interests: d.has('interests')?String(d.get("interests")):editing.interests||'',
+                boundaries: d.has('boundaries')?String(d.get("boundaries")):editing.boundaries||'',
                 memorial: d.get("memorial") === "on",
                 memorial_caption: String(d.get("memorial_caption")),
               };
@@ -836,7 +797,7 @@ function People({
                 placeholder="Mom, grandpa, family dog…"
               />
             </label>
-            <label>
+            {stage!=='members'&&<><label>
               Appearance & clothes
               <textarea
                 name="appearance"
@@ -867,7 +828,7 @@ function People({
             <label>
               Keep out of the jokes
               <textarea name="boundaries" defaultValue={editing.boundaries} />
-            </label>
+            </label></>}
           </div>
           <label className="checkbox">
             <input
@@ -923,9 +884,10 @@ function People({
               <p className="muted">
                 {p.appearance || "Their photo will help establish their look."}
               </p>
-              <button className="quiet" onClick={() => setEditing(p)}>
+              {stage!=='photos'&&<button className="quiet" onClick={() => setEditing(p)}>
                 Edit details →
-              </button>
+              </button>}
+              {stage!=='members'&&<>
               <GooglePhotos familyId={id} personId={p.id} remaining={6-refs.length} onSaved={saved}/>
               <label className="upload">
                 Add reference photos · {refs.length}/6
@@ -1018,6 +980,9 @@ function People({
                 For pets, include a clear photo of the named pet. Other subjects
                 in the photo won’t become cast members.
               </p>
+              </>}
+              {owner&&stage!=='photos'&&<button className="quiet" disabled={busy} onClick={()=>{setRemoving(p.id);setConfirmation('')}}>Remove from this cast</button>}
+              {removing===p.id&&<form className="confirm-remove" onSubmit={e=>{e.preventDefault();void run(async()=>{await rpc('remove_cast_member',{person_id:p.id,confirmation});setRemoving(null);await saved();const paths=refs.map(r=>r.object_path);if(paths.length){const cleaned=await db!.storage.from('family-references').remove(paths);if(cleaned.error)throw Error('The member was removed. Some stored photo files could not be cleaned up.');}})}}><p>Remove <strong>{p.name}</strong> from this family’s future cast? Past comics stay in the archive. This profile removal cannot be undone.</p><label>Type {p.name} to confirm<input value={confirmation} onChange={e=>setConfirmation(e.target.value)}/></label><button className="danger" disabled={busy||confirmation!==p.name}>Remove cast member</button><button type="button" className="quiet" disabled={busy} onClick={()=>setRemoving(null)}>Cancel</button></form>}
             </article>
           );
         })}
@@ -1113,6 +1078,7 @@ function Cast({
   const people=useRows('people',family.id),refs=useRows('reference_photos',family.id);
   const withoutPhotos=people.data.filter(p=>!refs.data.some(r=>r.person_id===p.id));
   const ready=current&&cast?.approved_at&&!cast?.missing?.length;
+  useEffect(()=>{const timer=setInterval(()=>{if(document.visibilityState==='visible'){void casts.refresh();void jobs.refresh();void onChange()}},15000);return()=>clearInterval(timer)},[family.id]);
   return (
     <>
       <div className="section-heading">
@@ -1148,6 +1114,7 @@ function Cast({
                 void run(async () => {
                   await rpc("approve_cast", { cast_id: cast.id });
                   await casts.refresh();
+                  await onChange();
                 })
               }
             >
@@ -1174,7 +1141,7 @@ function Cast({
         .filter((j) => j.visual_revision === family.visual_revision)
         .map((j) => (
           <p key={j.id}>
-            {j.state==='processing'?'Your cast preview is being drawn.':j.state==='ready'?'Your cast preview is ready to review.':j.state==='failed'?'We couldn’t finish your cast preview. Check your reference photos; the next morning check can retry while attempts remain.':'Your latest photos and details are saved for the next morning cast check.'}
+            {j.state==='processing'?'Your cast preview is being drawn.':j.state==='ready'?ready?'Your cast is approved.':current?'Your cast preview is ready to review.':'Your latest cast work is saved.':j.state==='failed'?'We couldn’t finish your cast preview. Check your reference photos; the next morning check can retry while attempts remain.':'Your latest photos and details are saved for the next morning cast check.'}
           </p>
         ))}
     </>
@@ -1189,6 +1156,7 @@ function Settings({
   const [link, setLink] = useState(""),
     [invites, setInvites] = useState<Row[]>([]),
     [error, setError] = useState("");
+  const [deleting,setDeleting]=useState(false),[confirmation,setConfirmation]=useState('');
   async function load() {
     try {
       setInvites(await rpc("list_invitations", { fid: family.id }));
@@ -1366,9 +1334,16 @@ function Settings({
         <p className="muted">
           {mirroredFamilies.has(family.id)?'This collection receives its daily comics from the original app.':'After approving your cast, choose Start daily comics on the Cast tab. Comics are generated each morning around 8 a.m. Pacific and appear after generation finishes.'}
         </p>
+        <div className="danger-zone"><h3>Remove this family</h3><p>Move this family to your Trash. It disappears from everyone’s bookshelf and new production stops. A family manager can restore it from My families.</p>{!deleting?<button className="quiet" onClick={()=>setDeleting(true)}>Move family to Trash</button>:<form onSubmit={e=>{e.preventDefault();void run(async()=>{await rpc('trash_family',{fid:family.id,confirmation});await onChange()})}}><label>Type {family.name} to confirm<input value={confirmation} onChange={e=>setConfirmation(e.target.value)}/></label><button className="danger" disabled={busy||confirmation!==family.name}>Move to Trash</button><button type="button" className="quiet" disabled={busy} onClick={()=>setDeleting(false)}>Cancel</button></form>}</div>
       </section>
     </div>
   );
+}
+function FamilyTrash({run,busy,onChange}:Runner&{onChange:()=>Promise<void>}){
+ const [trash,setTrash]=useState<Row[]>([]),[error,setError]=useState('');
+ async function load(){try{setTrash(await rpc('list_family_trash',{}));setError('')}catch(e){setError(errorText(e))}}
+ useEffect(()=>{void load()},[]);
+ return <details className="trash-list"><summary>Family Trash{trash.length?` (${trash.length})`:''}</summary><p className="muted small">Only managers can see and restore their trashed families. Restoring leaves daily production paused until you choose to resume.</p>{error&&<p role="alert">{error}</p>}{!trash.length&&<p>Your Trash is empty.</p>}{trash.map(f=><div className="trash-row" key={f.id}><strong>{f.name}</strong><button className="quiet" disabled={busy} onClick={()=>void run(async()=>{await rpc('restore_family',{fid:f.id});await onChange();await load()})}>Restore family</button></div>)}</details>
 }
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
