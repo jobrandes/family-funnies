@@ -78,9 +78,19 @@ do $$ begin
 end $$;
 reset role;
 set local role anon;
-do $$ begin
- begin perform * from public.people; raise exception 'Anonymous profile read allowed';
+-- Since instant-verified-access.sql, Firebase tokens without a `role` claim run
+-- as `anon`, so that role holds table grants. A visitor with no token must still
+-- see and change nothing: every policy requires a verified actor().
+select set_config('request.jwt.claims','',true);
+do $$ declare n bigint; begin
+ select (select count(*) from public.families)+(select count(*) from public.family_memberships)+(select count(*) from public.people)
+  +(select count(*) from public.reference_photos)+(select count(*) from public.story_moments)+(select count(*) from public.cast_versions)
+  +(select count(*) from public.cast_jobs)+(select count(*) from public.episodes)+(select count(*) from public.family_audit) into n;
+ if n<>0 then raise exception 'Anonymous visitor can read % family rows',n; end if;
+ begin insert into public.people(family_id,name) values(current_setting('test.family_a')::uuid,'Intruder'); raise exception 'Anonymous profile write allowed';
  exception when insufficient_privilege then null; end;
+ update public.families set name='Defaced'; get diagnostics n=row_count; if n<>0 then raise exception 'Anonymous family edit allowed'; end if;
+ delete from public.story_moments; get diagnostics n=row_count; if n<>0 then raise exception 'Anonymous delete allowed'; end if;
  begin perform public.create_family('Attack'); raise exception 'Anonymous creator allowed';
  exception when insufficient_privilege then null; end;
 end $$;
