@@ -84,11 +84,14 @@ function App() {
   async function refresh() {
     try {
       setError("");
-      const [f, m] = await Promise.all([
+      // Readers cannot read the family record (it holds private notes); the
+      // server hands them just the name and status for their shelf.
+      const [f, m, r] = await Promise.all([
         rows("families"),
         rows("family_memberships"),
+        rpc("reader_families", {}).catch(() => [] as Row[]),
       ]);
-      setFamilies(f);
+      setFamilies([...f, ...(r as Row[]).filter((x) => !f.some((y) => y.id === x.id))]);
       setMemberships(m);
     } catch (e) {
       setError(errorText(e));
@@ -752,6 +755,49 @@ function Comics({ id, onError }: { id: string; onError: (s: string) => void }) {
   }, [error]);
   const comics = [...data].sort((a, b) => b.day.localeCompare(a.day));
   const comic = comics.find((c) => c.id === selected) ?? comics[0];
+  // Sharing hands the finished picture to the phone's share sheet, or saves it
+  // where sharing files is not supported. Some browsers only allow the share
+  // sheet directly from a tap, so a prepared file is kept for a second tap.
+  const [sharing, setSharing] = useState(false),
+    [prepared, setPrepared] = useState<{ id: string; file: File } | null>(null),
+    [shareNote, setShareNote] = useState("");
+  useEffect(() => { setShareNote(""); }, [comic?.id]);
+  async function shareComic(c: Row) {
+    setShareNote("");
+    try {
+      let file = prepared && prepared.id === c.id ? prepared.file : null;
+      if (!file) {
+        setSharing(true);
+        const signed = await db!.storage.from("family-comics").createSignedUrl(c.object_path, 60);
+        if (signed.error) throw signed.error;
+        const response = await fetch(signed.data.signedUrl);
+        if (!response.ok) throw new Error("This comic could not be prepared for sharing. Please try again.");
+        const blob = await response.blob();
+        const type = /^image\/(png|jpeg|webp)$/.test(blob.type) ? blob.type : "image/png";
+        const name = (String(c.title).replace(/[^\p{L}\p{N} _-]+/gu, "").trim().slice(0, 60) || "Family comic") + " " + c.day + "." + type.slice(6).replace("jpeg", "jpg");
+        file = new File([blob], name, { type });
+        setPrepared({ id: c.id, file });
+      }
+      if (navigator.canShare?.({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], title: String(c.title) });
+        } catch (e) {
+          const kind = (e as { name?: string })?.name;
+          if (kind === "NotAllowedError") setShareNote("Ready. Tap Share comic once more.");
+          else if (kind !== "AbortError") throw e;
+        }
+        return;
+      }
+      const url = URL.createObjectURL(file), link = document.createElement("a");
+      link.href = url; link.download = file.name; link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+      setShareNote("Saved to this device so you can send it.");
+    } catch (e) {
+      onError(errorText(e));
+    } finally {
+      setSharing(false);
+    }
+  }
   return loading ? (
     <p role="status">Opening comics…</p>
   ) : comic ? (
@@ -766,6 +812,12 @@ function Comics({ id, onError }: { id: string; onError: (s: string) => void }) {
           path={comic.object_path}
           alt={comic.title}
         />
+        <div className="comic-actions">
+          <button className="secondary" disabled={sharing} onClick={() => void shareComic(comic)}>
+            {sharing ? "Preparing…" : "Share comic"}
+          </button>
+          {shareNote && <span className="small muted" role="status">{shareNote}</span>}
+        </div>
       </article>
       <aside className="paper">
         <p className="eyebrow">The collection</p>

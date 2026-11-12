@@ -59,7 +59,8 @@ do $$ declare r record; begin
 end $$;
 select public.accept_family_match(current_setting('test.match')::uuid);
 do $$ begin
- if (select array_agg(name) from public.families) is distinct from array['Shared fixture'] then raise exception 'Dad sees the wrong families'; end if;
+ if (select array_agg(name) from public.reader_families()) is distinct from array['Shared fixture'] then raise exception 'Dad sees the wrong families'; end if;
+ if (select count(*) from public.families)<>0 then raise exception 'Reader can read family notes'; end if;
  if (select role from public.family_memberships where actor_id like '%|dad')<>'reader' then raise exception 'Dad is not a reader'; end if;
  if (select count(*) from public.people)<>0 then raise exception 'Reader can see profiles'; end if;
  if pg_temp.pending()<>0 then raise exception 'Accepted match still offered'; end if;
