@@ -1,0 +1,12 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {fetchAll} from '../src/paged.mjs';
+const server=(total,cap)=>{const calls=[];return {calls,page:async(from,to)=>{calls.push([from,to]);const n=Math.max(0,Math.min(to-from+1,cap,total-from));return {data:Array.from({length:n},(_,i)=>from+i),count:total,error:null}}}};
+test('one request when everything fits',async()=>{const s=server(3,1000);assert.deepEqual(await fetchAll(s.page),[0,1,2]);assert.equal(s.calls.length,1)});
+test('no rows',async()=>{const s=server(0,1000);assert.deepEqual(await fetchAll(s.page),[]);assert.equal(s.calls.length,1)});
+test('keeps going past the 1,000 row cap',async()=>{const s=server(2500,1000);const r=await fetchAll(s.page);assert.equal(r.length,2500);assert.equal(new Set(r).size,2500);assert.equal(s.calls.length,3)});
+test('exact multiple of the page size needs no extra request',async()=>{const s=server(2000,1000);assert.equal((await fetchAll(s.page)).length,2000);assert.equal(s.calls.length,2)});
+test('server cap below the requested page size still returns everything',async()=>{const s=server(1200,500);assert.equal((await fetchAll(s.page)).length,1200)});
+test('errors are thrown, not swallowed',async()=>{await assert.rejects(fetchAll(async()=>({data:null,count:null,error:new Error('denied')})),/denied/)});
+test('stops at the safety limit',async()=>{const s=server(10**9,1000);assert.equal((await fetchAll(s.page,{maxRows:3000})).length,3000)});
+test('works without a count',async()=>{let n=0;const r=await fetchAll(async(from)=>({data:n++<2?Array(1000).fill(from):[1],error:null}));assert.equal(r.length,2001)});
