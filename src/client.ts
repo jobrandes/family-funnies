@@ -2,6 +2,7 @@ import {initializeApp} from 'firebase/app';
 import {getAuth} from 'firebase/auth';
 import {createClient} from '@supabase/supabase-js';
 import {publicConfig} from './public-config';
+import {fetchAll} from './paged.mjs';
 const env=import.meta.env;
 export const firebaseProjectId=env.VITE_FIREBASE_PROJECT_ID||publicConfig.firebase.projectId;
 const firebaseConfig={apiKey:env.VITE_FIREBASE_API_KEY||publicConfig.firebase.apiKey,projectId:firebaseProjectId,appId:env.VITE_FIREBASE_APP_ID||publicConfig.firebase.appId,authDomain:env.VITE_FIREBASE_AUTH_DOMAIN||publicConfig.firebase.authDomain};
@@ -19,11 +20,17 @@ export async function assertAccess(){
  const token=await u.getIdTokenResult();
  if(token.claims.email_verified!==true)await u.getIdToken(true);
 }
-export async function rows(table:string,familyId?:string){
+// A stable order is required for paging; every table has `id` except memberships.
+const orderKeys:Record<string,string[]>={family_memberships:['family_id','actor_id']};
+export async function rows(table:string,familyId?:string,columns='*'):Promise<Record<string,any>[]>{
  if(!db)throw new Error('The app connection is not configured yet.');
  await assertAccess();
- let q=db.from(table).select('*');if(familyId)q=q.eq('family_id',familyId);
- const {data,error}=await q;if(error)throw error;return data??[];
+ const client=db;
+ return fetchAll(async(from:number,to:number)=>{
+  let q=client.from(table).select(columns,{count:'exact'});if(familyId)q=q.eq('family_id',familyId);
+  for(const key of orderKeys[table]??['id'])q=q.order(key);
+  return await q.range(from,to);
+ });
 }
 export async function rpc(name:string,args:Record<string,unknown>){
  if(!db)throw new Error('The app connection is not configured yet.');

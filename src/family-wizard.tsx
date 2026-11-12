@@ -5,7 +5,9 @@ import {groupKnownProfiles,profileKey} from './known-profiles.mjs';
 type Row=Record<string,any>;
 type Tools={run:(fn:()=>Promise<void>)=>Promise<void>;busy:boolean;refresh:()=>Promise<void>};
 const names=['Family','Members','Photos','Details'];
-const message=(e:unknown)=>e instanceof Error?e.message:typeof e==='object'&&e&&'message' in e?String(e.message):'Could not save. Please try again.';
+const raw=(e:unknown)=>e instanceof Error?e.message:typeof e==='object'&&e&&'message' in e?String(e.message):'Could not save. Please try again.';
+// Families in the Trash still count toward the limit until they are deleted forever.
+const message=(e:unknown)=>{const text=raw(e);return text==='Family limit reached'?'You have reached the limit of 10 families. Open Family Trash on My families and delete one forever to make room.':text};
 export function FamilyWizard({initialId,onClose,onComplete,onChanged,renderPeople}:{initialId:string|null;onClose:()=>void;onComplete:(id:string)=>void;onChanged:()=>Promise<void>;renderPeople:(id:string,stage:'members'|'photos',tools:Tools)=>ReactNode}){
  const dialog=useRef<HTMLDialogElement>(null),heading=useRef<HTMLHeadingElement>(null),actionInFlight=useRef(false);
  const [fid,setFid]=useState<string|null>(initialId),[step,setStep]=useState(1),[name,setName]=useState(''),[family,setFamily]=useState<Row|null>(null),[people,setPeople]=useState<Row[]>([]),[photos,setPhotos]=useState<Row[]>([]),[busy,setBusy]=useState(false),[error,setError]=useState(''),[loading,setLoading]=useState(!!initialId),[known,setKnown]=useState<Row[]>([]);

@@ -23,6 +23,7 @@ import "./shelves.css";
 import {GooglePhotos} from './google-photos';
 import {FamilyWizard} from './family-wizard';
 import {familyStatus} from './family-status.mjs';
+import {pendingInvite,forgetInvite,inviteUrl} from './invite.mjs';
 const mirroredFamilies=new Set(['a558ec80-f1ee-4094-9bc2-689d0e54f063','94c3f471-bd68-4390-89fe-74b250b40754','e47f2cc4-c03b-4537-a08a-729c94fe41cf']);
 type Row = Record<string, any>;
 const errorText = (e: unknown) =>
@@ -31,8 +32,17 @@ const errorText = (e: unknown) =>
     : typeof e === "object" && e && "message" in e
       ? String(e.message)
       : "Something went wrong. Please try again.";
-const inviteToken = () =>
-  new URLSearchParams(location.hash.slice(1)).get("invite");
+const readInvite = (): string | null => pendingInvite(location.hash, localStorage);
+// Carry a pending invitation through the verification email. Firebase rejects
+// continue links it does not accept, so fall back to the plain address.
+async function sendVerification(user: User) {
+  try {
+    await sendEmailVerification(user, { url: inviteUrl(location.origin, readInvite()) });
+  } catch (e) {
+    if ((e as { code?: string })?.code !== "auth/invalid-continue-uri") throw e;
+    await sendEmailVerification(user, { url: location.origin });
+  }
+}
 function App() {
   const [user, setUser] = useState<User | null>(null),
     [loading, setLoading] = useState(true),
@@ -45,6 +55,9 @@ function App() {
   const [memberships, setMemberships] = useState<Row[]>([]);
   const [wizardId,setWizardId]=useState<string|null>(null);
   const [collectionLoading,setCollectionLoading]=useState(true);
+  const [invite,setInvite]=useState<string|null>(readInvite);
+  useEffect(()=>{const changed=()=>setInvite(readInvite());window.addEventListener('hashchange',changed);return()=>window.removeEventListener('hashchange',changed)},[]);
+  const dropInvite=()=>{forgetInvite(localStorage);if(location.hash.includes('invite='))history.replaceState(null,'',location.pathname);setInvite(null)};
   useEffect(() => {
     if (!auth) {
       setLoading(false);
@@ -161,23 +174,30 @@ function App() {
             </div>
           </section>
         ) : !user ? (
-          <Login busy={busy} run={act} />
+          <Login busy={busy} run={act} invited={!!invite} />
         ) : !user.emailVerified ? (
           <VerifyEmail user={user} onVerified={(verified)=>setUser(Object.assign(Object.create(Object.getPrototypeOf(verified)),verified))}/>
         ) : collectionLoading ? <section className="paper narrow" role="status"><p className="eyebrow">Email verified</p><h1>Opening your families…</h1><p>Your account is ready.</p></section> : (
           <>
-            {inviteToken() && (
+            {invite && (
               <section className="paper invite">
                 <h2>You have a family invitation.</h2>
                 <p>Join to add this family to your bookshelf.</p>
+                <div className="actions">
                 <button
                   disabled={busy}
                   onClick={() =>
                     void act(async () => {
-                      const id = await rpc("accept_invitation", {
-                        token: inviteToken(),
-                      });
-                      history.replaceState(null, "", location.pathname);
+                      let id: string;
+                      try {
+                        id = await rpc("accept_invitation", { token: invite });
+                      } catch (e) {
+                        // Used, expired, revoked or already joined: it can never
+                        // succeed later, so stop offering it.
+                        if (/Invitation unavailable|already belong/.test(errorText(e))) dropInvite();
+                        throw e;
+                      }
+                      dropInvite();
                       await refresh();
                       setFamilyId(id);
                     })
@@ -185,6 +205,10 @@ function App() {
                 >
                   Accept invitation
                 </button>
+                <button className="quiet" disabled={busy} onClick={dropInvite}>
+                  Not now
+                </button>
+                </div>
               </section>
             )}
             {!family ? (
@@ -357,7 +381,7 @@ function FamilyShelves({
     let active = true;
     setDetails(null);
     if (!families.length) return;
-    Promise.all([rows("people"), rows("cast_versions"), rows("episodes"),rows('cast_jobs')])
+    Promise.all([rows("people"), rows("cast_versions"), rows("episodes", undefined, EPISODE_LIST),rows('cast_jobs')])
       .then(([people, casts, episodes,jobs]) => {
         if (active) setDetails({ people, casts, episodes,jobs });
       })
@@ -476,7 +500,7 @@ function VerifyEmail({user,onVerified}:{user:User;onVerified:(user:User)=>void})
  },[user]);
  async function resend(){
   if(sending||remaining)return;setSending(true);setError('');
-  try{await sendEmailVerification(user,{url:location.origin});const sent=Date.now();sessionStorage.setItem('verification-sent:'+user.uid,String(sent));setLastSent(sent);setNow(sent);setMessage('A new verification email was requested. Use the newest email link.');}
+  try{await sendVerification(user);const sent=Date.now();sessionStorage.setItem('verification-sent:'+user.uid,String(sent));setLastSent(sent);setNow(sent);setMessage('A new verification email was requested. Use the newest email link.');}
   catch(e){setError(errorText(e));}finally{setSending(false);}
  }
  return <section className="narrow paper"><p className="eyebrow">One quick check</p><h1>Check your email.</h1><p>Open the verification link sent to <strong>{user.email}</strong>.</p><div className="notice"><strong>Then you’re ready.</strong><p>This page checks automatically and opens your families after verification. There’s no separate activation wait.</p></div><p className="muted">Email can take a few minutes. Check Spam or Junk and search for “Family Funnies.” Use the newest verification email if you request another.</p>{message&&<p role="status">{message}</p>}{error&&<p role="alert">{error}</p>}<div className="actions"><button disabled={checking} onClick={()=>void check(true)}>{checking?'Checking…':'I’ve verified my email'}</button><button className="quiet" disabled={sending||remaining>0} onClick={()=>void resend()}>{sending?'Sending…':remaining?`Resend in ${remaining}s`:'Resend verification email'}</button></div><p className="small muted">Wrong email? <button className="quiet" onClick={()=>void signOut(auth!)}>Sign out and use another address</button></p></section>;
@@ -484,9 +508,11 @@ function VerifyEmail({user,onVerified}:{user:User;onVerified:(user:User)=>void})
 function Login({
   run,
   busy,
+  invited,
 }: {
   run: (fn: () => Promise<void>) => Promise<void>;
   busy: boolean;
+  invited: boolean;
 }) {
   const [mode, setMode] = useState("signin"),
     [message, setMessage] = useState(""),
@@ -515,7 +541,7 @@ function Login({
           password,
         );
         sessionStorage.setItem('verification-sent:'+result.user.uid,String(Date.now()));
-        await sendEmailVerification(result.user,{url:location.origin});
+        await sendVerification(result.user);
       } else await signInWithEmailAndPassword(auth!, email, password);
     });
   }
@@ -545,6 +571,12 @@ function Login({
               : "Welcome back"}
         </h2>
         <p>No ChatGPT account needed.</p>
+        {invited && (
+          <div className="notice">
+            <strong>You have a family invitation.</strong>
+            <p>Sign in or create an account and it will be waiting for you.</p>
+          </div>
+        )}
         {message && <p role="status">{message}</p>}
         <label>
           Email
@@ -599,14 +631,16 @@ function Login({
     </section>
   );
 }
-function useRows(table: string, id: string) {
+// Lists never show the script, so do not download it with every row.
+const EPISODE_LIST = "id,family_id,day,title,object_path";
+function useRows(table: string, id: string, columns?: string) {
   const [data, setData] = useState<Row[]>([]),
     [error, setError] = useState(""),
     [loading, setLoading] = useState(true);
   async function refresh() {
     setLoading(true);
     try {
-      setData(await rows(table, id));
+      setData(await rows(table, id, columns));
       setError("");
     } catch (e) {
       setError(errorText(e));
@@ -616,7 +650,7 @@ function useRows(table: string, id: string) {
   }
   useEffect(() => {
     void refresh();
-  }, [table, id]);
+  }, [table, id, columns]);
   return { data, error, loading, refresh };
 }
 function PrivateImage({
@@ -654,7 +688,7 @@ function PrivateImage({
   );
 }
 function Comics({ id, onError }: { id: string; onError: (s: string) => void }) {
-  const { data, error, loading } = useRows("episodes", id),
+  const { data, error, loading } = useRows("episodes", id, EPISODE_LIST),
     [selected, setSelected] = useState("");
   useEffect(() => {
     if (error) onError(error);
@@ -717,6 +751,18 @@ function People({
     photos = useRows("reference_photos", id),
     [editing, setEditing] = useState<Row | null>(null);
   const [removing,setRemoving]=useState<string|null>(null),[confirmation,setConfirmation]=useState('');
+  // Quietly retry cleanup of stored photos that no profile uses any more (an
+  // earlier removal that lost its connection). Never blocks or alarms the page.
+  useEffect(()=>{
+    if(stage)return;
+    void (async()=>{
+      try{
+        const stale:Row[]=await rpc('orphan_reference_files',{fid:id});
+        const paths=stale.map(x=>x.path).filter(p=>typeof p==='string'&&p.startsWith(id+'/'));
+        if(paths.length)await db!.storage.from('family-references').remove(paths.slice(0,100));
+      }catch{/* best effort; retried on the next visit */}
+    })();
+  },[id,stage]);
   async function saved() {
     await refresh();
     await photos.refresh();
@@ -1341,9 +1387,29 @@ function Settings({
 }
 function FamilyTrash({run,busy,onChange}:Runner&{onChange:()=>Promise<void>}){
  const [trash,setTrash]=useState<Row[]>([]),[error,setError]=useState('');
+ const [purging,setPurging]=useState<string|null>(null),[confirmation,setConfirmation]=useState('');
  async function load(){try{setTrash(await rpc('list_family_trash',{}));setError('')}catch(e){setError(errorText(e))}}
  useEffect(()=>{void load()},[]);
- return <details className="trash-list"><summary>Family Trash{trash.length?` (${trash.length})`:''}</summary><p className="muted small">Only managers can see and restore their trashed families. Restoring leaves daily production paused until you choose to resume.</p>{error&&<p role="alert">{error}</p>}{!trash.length&&<p>Your Trash is empty.</p>}{trash.map(f=><div className="trash-row" key={f.id}><strong>{f.name}</strong><button className="quiet" disabled={busy} onClick={()=>void run(async()=>{await rpc('restore_family',{fid:f.id});await onChange();await load()})}>Restore family</button></div>)}</details>
+ // Stored files go first; the database refuses to drop a family that still has any.
+ async function purge(f:Row){
+  try{
+   for(let pass=0;;pass++){
+    const files:Row[]=await rpc('list_trash_files',{fid:f.id});
+    if(!files.length)break;
+    if(pass>=40)throw Error('This family has more stored files than one pass can clear. Choose Delete forever again to continue.');
+    for(const bucket of new Set(files.map(x=>x.bucket))){
+     const paths=files.filter(x=>x.bucket===bucket).map(x=>x.path);
+     for(let i=0;i<paths.length;i+=100){const removed=await db!.storage.from(bucket).remove(paths.slice(i,i+100));if(removed.error)throw Error('Some stored photos or comics could not be deleted. Nothing else was removed; try again.');}
+    }
+   }
+   await rpc('purge_family',{fid:f.id,confirmation});
+  }catch(e){
+   if((e as {code?:string})?.code==='PGRST202')throw Error('Permanent delete is not switched on for this app yet. The family is still safely in your Trash.');
+   throw e;
+  }
+  setPurging(null);setConfirmation('');await load();await onChange();
+ }
+ return <details className="trash-list"><summary>Family Trash{trash.length?` (${trash.length})`:''}</summary><p className="muted small">Only managers can see and restore their trashed families. Restoring leaves daily production paused until you choose to resume. Deleting forever erases the family, its people, photos and comics for everyone.</p>{error&&<p role="alert">{error}</p>}{!trash.length&&<p>Your Trash is empty.</p>}{trash.map(f=><div className="trash-row" key={f.id}><strong>{f.name}</strong><span className="trash-actions"><button className="quiet" disabled={busy} onClick={()=>void run(async()=>{await rpc('restore_family',{fid:f.id});await onChange();await load()})}>Restore family</button>{purging!==f.id&&<button className="quiet" disabled={busy} onClick={()=>{setPurging(f.id);setConfirmation('')}}>Delete forever</button>}</span>{purging===f.id&&<form className="confirm-remove" onSubmit={e=>{e.preventDefault();void run(()=>purge(f))}}><p>Permanently delete <strong>{f.name}</strong>? Its people, reference photos, story jar and every comic are erased for all members. This cannot be undone.</p><label>Type {f.name} to confirm<input value={confirmation} autoComplete="off" onChange={e=>setConfirmation(e.target.value)}/></label><button className="danger" disabled={busy||confirmation!==f.name}>{busy?'Deleting…':'Delete forever'}</button><button type="button" className="quiet" disabled={busy} onClick={()=>setPurging(null)}>Cancel</button></form>}</div>)}</details>
 }
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
