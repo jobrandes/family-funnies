@@ -1,4 +1,4 @@
-import React, { useEffect, useState, type FormEvent } from "react";
+import React, { useEffect, useRef, useState, type FormEvent } from "react";
 import { createRoot } from "react-dom/client";
 import {
   createUserWithEmailAndPassword,
@@ -41,7 +41,7 @@ function App() {
     [busy, setBusy] = useState(false),
     [newFamily, setNewFamily] = useState(false);
   const [memberships, setMemberships] = useState<Row[]>([]);
-  const [activating,setActivating]=useState(false);
+  const [collectionLoading,setCollectionLoading]=useState(true);
   useEffect(() => {
     if (!auth) {
       setLoading(false);
@@ -66,16 +66,15 @@ function App() {
       ]);
       setFamilies(f);
       setMemberships(m);
-      setActivating(false);
     } catch (e) {
-      if(errorText(e).includes('activation is pending'))setActivating(true);
-      else setError(errorText(e));
+      setError(errorText(e));
+    } finally {
+      setCollectionLoading(false);
     }
   }
   useEffect(() => {
-    if (user?.emailVerified) void refresh();
+    if (user?.emailVerified) {setCollectionLoading(true);void refresh();}
   }, [user]);
-  useEffect(()=>{if(!activating)return;const timer=setInterval(()=>void refresh(),30000);return()=>clearInterval(timer)},[activating]);
   const family = families.find((f) => f.id === familyId);
   const actor = user
     ? `https://securetoken.google.com/${firebaseProjectId}|${user.uid}`
@@ -161,43 +160,8 @@ function App() {
         ) : !user ? (
           <Login busy={busy} run={act} />
         ) : !user.emailVerified ? (
-          <section className="narrow paper">
-            <p className="eyebrow">One quick check</p>
-            <h1>Check your email.</h1>
-            <p>Verify {user.email} to open your families.</p>
-            <button
-              disabled={busy}
-              onClick={() =>
-                void act(async () => {
-                  await user.reload();
-                  if (!auth!.currentUser!.emailVerified)
-                    throw new Error(
-                      "The verification has not arrived yet. Open the link in your email, then try again.",
-                    );
-                  setUser(
-                    Object.assign(
-                      Object.create(Object.getPrototypeOf(user)),
-                      user,
-                    ),
-                  );
-                })
-              }
-            >
-              I’ve verified my email
-            </button>
-            <button
-              className="quiet"
-              disabled={busy}
-              onClick={() =>
-                void act(async () => {
-                  await sendEmailVerification(user);
-                })
-              }
-            >
-              Resend verification
-            </button>
-          </section>
-        ) : activating ? <section className="paper narrow" role="status"><p className="eyebrow">Email verified</p><h1>Getting your account ready.</h1><p>This usually takes a few minutes. We’ll open your collection automatically when it’s ready.</p><p className="muted">You can leave this page open.</p></section> : (
+          <VerifyEmail user={user} onVerified={(verified)=>setUser(Object.assign(Object.create(Object.getPrototypeOf(verified)),verified))}/>
+        ) : collectionLoading ? <section className="paper narrow" role="status"><p className="eyebrow">Email verified</p><h1>Opening your families…</h1><p>Your account is ready.</p></section> : (
           <>
             {inviteToken() && (
               <section className="paper invite">
@@ -530,6 +494,35 @@ function FamilyShelves({
     </section>
   );
 }
+function VerifyEmail({user,onVerified}:{user:User;onVerified:(user:User)=>void}){
+ const [message,setMessage]=useState(''),[error,setError]=useState(''),[sending,setSending]=useState(false),[checking,setChecking]=useState(false);
+ const [lastSent,setLastSent]=useState(()=>Number(sessionStorage.getItem('verification-sent:'+user.uid)||0));
+ const [now,setNow]=useState(Date.now());
+ const inFlight=useRef(false);
+ const remaining=Math.max(0,Math.ceil((lastSent+60000-now)/1000));
+ async function check(manual=false){
+  if(inFlight.current||document.visibilityState==='hidden')return;
+  inFlight.current=true;if(manual){setChecking(true);setError('');}
+  try{
+   await user.reload();const current=auth?.currentUser;
+   if(current?.emailVerified){await current.getIdToken(true);onVerified(current);}
+   else if(manual)setMessage('Still waiting for the email link to be opened. We’ll keep checking automatically.');
+  }catch{if(manual)setError('Could not check your email yet. Check your connection and try again.');}
+  finally{inFlight.current=false;if(manual)setChecking(false);}
+ }
+ useEffect(()=>{
+  const poll=setInterval(()=>void check(),5000),clock=setInterval(()=>setNow(Date.now()),1000);
+  const focus=()=>void check();window.addEventListener('focus',focus);document.addEventListener('visibilitychange',focus);
+  void check();
+  return()=>{clearInterval(poll);clearInterval(clock);window.removeEventListener('focus',focus);document.removeEventListener('visibilitychange',focus);};
+ },[user]);
+ async function resend(){
+  if(sending||remaining)return;setSending(true);setError('');
+  try{await sendEmailVerification(user,{url:location.origin});const sent=Date.now();sessionStorage.setItem('verification-sent:'+user.uid,String(sent));setLastSent(sent);setNow(sent);setMessage('A new verification email was requested. Use the newest email link.');}
+  catch(e){setError(errorText(e));}finally{setSending(false);}
+ }
+ return <section className="narrow paper"><p className="eyebrow">One quick check</p><h1>Check your email.</h1><p>Open the verification link sent to <strong>{user.email}</strong>.</p><div className="notice"><strong>Then you’re ready.</strong><p>This page checks automatically and opens your families after verification. There’s no separate activation wait.</p></div><p className="muted">Email can take a few minutes. Check Spam or Junk and search for “Family Funnies.” Use the newest verification email if you request another.</p>{message&&<p role="status">{message}</p>}{error&&<p role="alert">{error}</p>}<div className="actions"><button disabled={checking} onClick={()=>void check(true)}>{checking?'Checking…':'I’ve verified my email'}</button><button className="quiet" disabled={sending||remaining>0} onClick={()=>void resend()}>{sending?'Sending…':remaining?`Resend in ${remaining}s`:'Resend verification email'}</button></div><p className="small muted">Wrong email? <button className="quiet" onClick={()=>void signOut(auth!)}>Sign out and use another address</button></p></section>;
+}
 function Login({
   run,
   busy,
@@ -538,16 +531,21 @@ function Login({
   busy: boolean;
 }) {
   const [mode, setMode] = useState("signin"),
-    [message, setMessage] = useState("");
+    [message, setMessage] = useState(""),
+    [sentAt,setSentAt]=useState(0),[clock,setClock]=useState(Date.now());
+  const retryIn=Math.max(0,Math.ceil((sentAt+60000-clock)/1000));
+  useEffect(()=>{if(!sentAt)return;const timer=setInterval(()=>setClock(Date.now()),1000);return()=>clearInterval(timer)},[sentAt]);
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const d = new FormData(e.currentTarget);
     await run(async () => {
       const email = String(d.get("email"));
       if (mode === "reset") {
-        await sendPasswordResetEmail(auth!, email);
+        if(retryIn)return;
+        await sendPasswordResetEmail(auth!, email,{url:location.origin});
+        setSentAt(Date.now());setClock(Date.now());
         setMessage(
-          "If an account exists, a password reset email will arrive shortly.",
+          "Reset email requested. If that address has an account, look for the email from Family Funnies. Check Spam or Junk too. Delivery can take a few minutes; use the newest reset email.",
         );
         return;
       }
@@ -558,7 +556,8 @@ function Login({
           email,
           password,
         );
-        await sendEmailVerification(result.user);
+        sessionStorage.setItem('verification-sent:'+result.user.uid,String(Date.now()));
+        await sendEmailVerification(result.user,{url:location.origin});
       } else await signInWithEmailAndPassword(auth!, email, password);
     });
   }
@@ -607,15 +606,16 @@ function Login({
             />
           </label>
         )}
-        <button disabled={busy}>
+        <button disabled={busy||(mode==='reset'&&retryIn>0)}>
           {busy
             ? "One moment…"
             : mode === "signup"
               ? "Create account"
               : mode === "reset"
-                ? "Send reset email"
+                ? retryIn?`Request another in ${retryIn}s`:sentAt?'Request another reset email':"Send reset email"
                 : "Sign in"}
         </button>
+        {mode==='reset'&&<button type="button" className="quiet" onClick={()=>{setMode('signin');setMessage('')}}>Back to sign in</button>}
         <button
           type="button"
           className="quiet"

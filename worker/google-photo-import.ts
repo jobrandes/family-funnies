@@ -19,7 +19,7 @@ Deno.serve(async req=>{
  try{
   const {payload}=await jwtVerify(authorization.slice(7),firebaseKeys,{issuer:'https://securetoken.google.com/family-funnies',audience:'family-funnies',algorithms:['RS256'],requiredClaims:['exp','iat','auth_time','sub']});
   const now=Date.now()/1000;
-  if(!payload.sub||payload.sub.length>128||typeof payload.iat!=='number'||payload.iat>now||typeof payload.auth_time!=='number'||payload.auth_time>now||payload.email_verified!==true||payload.role!=='authenticated')return reply(401,'Verify your account before importing photos.');
+  if(!payload.sub||payload.sub.length>128||typeof payload.iat!=='number'||payload.iat>now||typeof payload.auth_time!=='number'||payload.auth_time>now||payload.email_verified!==true)return reply(401,'Verify your account before importing photos.');
  }catch{return reply(401,'Sign in again to import photos.');}
  if(Number(req.headers.get('content-length'))>16000)return reply(413,'Request too large.');
  try{

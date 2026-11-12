@@ -13,8 +13,11 @@ export const db=configured?createClient(supabaseUrl,publishableKey,{accessToken:
 export async function assertAccess(){
  const u=auth?.currentUser;
  if(!u||!u.emailVerified)throw new Error('Verify your email before opening your families.');
- const token=await u.getIdTokenResult(true);
- if(token.claims.role!=='authenticated')throw new Error('Your email is verified. Account activation is pending; please try Refresh after a few minutes.');
+ // Refresh after verification, but do not wait for a scheduled custom claim.
+ // Supabase verifies the signature; actor() verifies issuer/audience/email and
+ // every operation still enforces the caller's family membership through RLS.
+ const token=await u.getIdTokenResult();
+ if(token.claims.email_verified!==true)await u.getIdToken(true);
 }
 export async function rows(table:string,familyId?:string){
  if(!db)throw new Error('The app connection is not configured yet.');
