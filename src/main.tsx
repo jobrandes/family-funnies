@@ -59,8 +59,12 @@ function App() {
   useEffect(()=>{const changed=()=>setInvite(readInvite());window.addEventListener('hashchange',changed);return()=>window.removeEventListener('hashchange',changed)},[]);
   // Families that list this account's verified email on a cast member.
   const [matches,setMatches]=useState<Row[]>([]),[skipped,setSkipped]=useState<string[]>([]),[joined,setJoined]=useState('');
-  async function loadMatches(){try{setMatches(await rpc('my_family_matches',{}))}catch{setMatches([])/* not switched on, or offline: nothing to offer */}}
-  useEffect(()=>{if(user?.emailVerified)void loadMatches();else setMatches([])},[user]);
+  async function loadMatches(){
+    const uid=auth?.currentUser?.uid;if(!uid)return;
+    try{const offers=await rpc('my_family_matches',{});if(auth?.currentUser?.uid===uid)setMatches(offers)}
+    catch{if(auth?.currentUser?.uid===uid)setMatches([])/* not switched on, or offline: nothing to offer */}
+  }
+  useEffect(()=>{setMatches([]);setSkipped([]);setJoined('');if(user?.emailVerified)void loadMatches()},[user]);
   const dropInvite=()=>{forgetInvite(localStorage);if(location.hash.includes('invite='))history.replaceState(null,'',location.pathname);setInvite(null)};
   useEffect(() => {
     if (!auth) {
