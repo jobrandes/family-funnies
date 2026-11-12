@@ -970,7 +970,13 @@ function People({
                             contentType: file.type,
                             upsert: false,
                           });
-                        if (uploaded.error) throw uploaded.error;
+                        if (uploaded.error) {
+                          // Contributors can always upload, so a policy refusal
+                          // here means the family's stored-photo ceiling.
+                          if (/row-level security|policy/i.test(uploaded.error.message))
+                            throw new Error("This photo could not be saved. This family may have reached its limit of 200 stored photos; remove ones you no longer need and try again.");
+                          throw uploaded.error;
+                        }
                         const result = await db!
                           .from("reference_photos")
                           .insert({
