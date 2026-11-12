@@ -15,7 +15,7 @@ run -d postgres -c "do \$\$ begin
 end \$\$"
 run -d "$DB" -f tests/support/supabase-stand-in.sql
 for migration in foundation invitations production production-media public-launch-permissions \
-  instant-verified-access family-management trash-purge usage-caps; do
+  instant-verified-access family-management trash-purge usage-caps cast-email-match; do
   echo "migrate: $migration"
   run -d "$DB" -f "database/$migration.sql" >/dev/null
 done

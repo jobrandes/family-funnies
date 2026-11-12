@@ -7,3 +7,6 @@
 .family-wizard .wizard-footer{display:block;max-width:none;width:100%;margin:0;color:#382538}
 
 .trash-row{flex-wrap:wrap}.trash-actions{display:flex;flex-wrap:wrap;gap:8px}.trash-row .confirm-remove{flex-basis:100%;margin-top:0}
+
+.member-match{border:1px solid #d9c8b9;background:#f3ebde;border-radius:12px;padding:16px;margin:0 0 18px;min-width:0}.member-match legend{font-family:'Libre Baskerville',Georgia,serif;font-weight:700;font-size:17px;padding:0 6px}.member-match input{margin-bottom:10px}.member-match ul{margin:8px 0 0;padding-left:18px}.member-match p{margin:0 0 10px}
+.match-offer{border:2px solid #b5532f;margin-bottom:24px}.match-offer h2{margin-top:0}.match-offer .actions button{min-height:44px}

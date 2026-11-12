@@ -57,6 +57,10 @@ function App() {
   const [collectionLoading,setCollectionLoading]=useState(true);
   const [invite,setInvite]=useState<string|null>(readInvite);
   useEffect(()=>{const changed=()=>setInvite(readInvite());window.addEventListener('hashchange',changed);return()=>window.removeEventListener('hashchange',changed)},[]);
+  // Families that list this account's verified email on a cast member.
+  const [matches,setMatches]=useState<Row[]>([]),[skipped,setSkipped]=useState<string[]>([]),[joined,setJoined]=useState('');
+  async function loadMatches(){try{setMatches(await rpc('my_family_matches',{}))}catch{setMatches([])/* not switched on, or offline: nothing to offer */}}
+  useEffect(()=>{if(user?.emailVerified)void loadMatches();else setMatches([])},[user]);
   const dropInvite=()=>{forgetInvite(localStorage);if(location.hash.includes('invite='))history.replaceState(null,'',location.pathname);setInvite(null)};
   useEffect(() => {
     if (!auth) {
@@ -179,6 +183,55 @@ function App() {
           <VerifyEmail user={user} onVerified={(verified)=>setUser(Object.assign(Object.create(Object.getPrototypeOf(verified)),verified))}/>
         ) : collectionLoading ? <section className="paper narrow" role="status"><p className="eyebrow">Email verified</p><h1>Opening your families…</h1><p>Your account is ready.</p></section> : (
           <>
+            {!family && joined && (
+              <div className="notice success" role="status">
+                You joined <strong>{joined}</strong>. Its comics are on your shelf.
+              </div>
+            )}
+            {!family && matches.filter((x) => !skipped.includes(x.match_id)).map((x) => (
+              <section className="paper invite match-offer" key={x.match_id} aria-label={"Invitation to " + x.family_name}>
+                <p className="eyebrow">You’re in a family</p>
+                <h2>{x.family_name} has you in its cast as “{x.cast_name}”.</h2>
+                <p>
+                  Want to join? You’ll be able to read this family’s comics. You
+                  won’t be able to change anything.
+                </p>
+                <p className="small muted">Matched to your verified email, {user.email}.</p>
+                <div className="actions">
+                  <button
+                    disabled={busy}
+                    onClick={() =>
+                      void act(async () => {
+                        try {
+                          await rpc("accept_family_match", { target_match: x.match_id });
+                        } finally {
+                          await loadMatches();
+                        }
+                        setJoined(x.family_name);
+                        await refresh();
+                      })
+                    }
+                  >
+                    Join as a reader
+                  </button>
+                  <button className="secondary" disabled={busy} onClick={() => setSkipped((s) => [...s, x.match_id])}>
+                    Not now
+                  </button>
+                  <button
+                    className="quiet"
+                    disabled={busy}
+                    onClick={() =>
+                      void act(async () => {
+                        await rpc("decline_family_match", { target_match: x.match_id });
+                        await loadMatches();
+                      })
+                    }
+                  >
+                    This isn’t me. Don’t ask again
+                  </button>
+                </div>
+              </section>
+            ))}
             {invite && (
               <section className="paper invite">
                 <h2>You have a family invitation.</h2>
@@ -763,9 +816,19 @@ function People({
       }catch{/* best effort; retried on the next visit */}
     })();
   },[id,stage]);
+  // Owner-only: emails attached to cast members, keyed by person. `null` means
+  // the feature is not available here (not the owner, or not switched on yet).
+  const [emails,setEmails]=useState<Record<string,Row>|null>(null);
+  async function loadEmails(){
+    if(!owner){setEmails(null);return;}
+    try{const list:Row[]=await rpc('list_member_emails',{fid:id});setEmails(Object.fromEntries(list.map(x=>[x.person_id,x])))}
+    catch{setEmails(null)}
+  }
+  useEffect(()=>{void loadEmails()},[id,owner]);
   async function saved() {
     await refresh();
     await photos.refresh();
+    await loadEmails();
     await onChange();
   }
   return (
@@ -810,6 +873,19 @@ function People({
                     .single()
                 : await db!.from("people").insert(value).select("id").single();
               if (result.error) throw result.error;
+              if (emails && d.has("match_email")) {
+                const wanted = value.kind === "person" ? String(d.get("match_email")).trim().toLowerCase() : "";
+                if (wanted !== (emails[result.data.id]?.email ?? "")) {
+                  try {
+                    await rpc("set_member_email", { target_person: result.data.id, new_email: wanted });
+                  } catch (e) {
+                    // The profile itself is saved; keep the form open on the email problem.
+                    await saved();
+                    setEditing({ ...editing, ...value, id: result.data.id });
+                    throw e;
+                  }
+                }
+              }
               setEditing(null);
               await saved();
             });
@@ -876,6 +952,41 @@ function People({
               <textarea name="boundaries" defaultValue={editing.boundaries} />
             </label></>}
           </div>
+          {emails && (
+            <fieldset className="member-match">
+              <legend>Let {editing.name || "them"} read this family’s comics</legend>
+              <p className="small">
+                Add the email they sign in with. Next time they open the app,
+                they’ll be asked if they want to join.
+              </p>
+              <label>
+                Their email <span className="muted">Optional</span>
+                <input
+                  name="match_email"
+                  type="email"
+                  inputMode="email"
+                  autoComplete="off"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  maxLength={254}
+                  defaultValue={editing.id ? emails[editing.id]?.email ?? "" : ""}
+                  placeholder="name@example.com"
+                />
+              </label>
+              <p className="small">
+                <strong>Joins as:</strong> Reader · comics only
+                {editing.id && emails[editing.id] && (
+                  <> · {emails[editing.id].status === "joined" ? "Has joined" : "Waiting for them to sign in"}</>
+                )}
+              </p>
+              <ul className="small muted">
+                <li>We don’t email them. Let them know to look for it.</li>
+                <li>They only see this family, none of your others.</li>
+                <li>They must accept before anything is shared.</li>
+                <li>Clearing the email stops the offer. It doesn’t remove someone who already joined.</li>
+              </ul>
+            </fieldset>
+          )}
           <label className="checkbox">
             <input
               name="memorial"
@@ -925,6 +1036,7 @@ function People({
               <div className="person-heading">
                 <h3>{p.name}</h3>
                 {p.memorial && <span className="badge">Always with us</span>}
+                {emails?.[p.id] && <span className="badge">{emails[p.id].status === "joined" ? "Reads this family" : "Invited to read"}</span>}
               </div>
               <p>{p.relationship || p.kind}</p>
               <p className="muted">
