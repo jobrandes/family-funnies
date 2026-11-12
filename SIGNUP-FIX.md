@@ -1,6 +1,6 @@
 # Verified signup without scheduled activation
 
-Prepared change; production database migration requires explicit owner approval.
+Released November 11, 2026 after explicit owner approval of the database change.
 
 ## Behavior
 
@@ -26,11 +26,11 @@ it does not grant access to private records, runner commands, media permits,
 membership mutation, or cast/comic writes. Storage uses the existing membership
 policies. Anonymous visitors, unverified users, and outsiders must remain denied.
 
-The automatic approval reviewer rejected the permanent production grants as a
-security boundary change beyond the instruction to speed signup. The migration
-was only exercised in a transaction that rolled back; it is NOT installed.
-The frontend is not deployed while it depends on that migration. The temporary
-photo-import deployment was restored byte-for-byte to its previous source.
+The automatic approval reviewer initially rejected the permanent production
+grants as a security boundary change beyond the instruction to speed signup.
+Jo explicitly approved the described change. The database migration, updated
+photo importer and frontend are now deployed. The owner-checked privileged
+enable_production routine lives in family_private behind an invoker API wrapper.
 
 ## Validation
 
@@ -40,6 +40,11 @@ photo-import deployment was restored byte-for-byte to its previous source.
   outsiders cannot read family data or storage; unverified/anonymous/wrong
   issuer/wrong audience are denied; runner commands and permits are denied.
 - A real new-user email-verification test remains necessary after deployment.
+- Live bundle verified: new verification text is present, old activation-pending
+  gate is absent, reset guidance is present. Recovery navigation checked in browser.
+- Live anonymous family reads return no rows; anonymous family creation, unsigned
+  tokens and unauthenticated photo imports are denied. Security advisors show no
+  warning findings (private default-deny tables retain informational notices).
 
 ## Rollout after approval
 

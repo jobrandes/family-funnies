@@ -40,4 +40,13 @@ grant execute on function public.create_family(text),
  public.approve_cast(uuid),public.pause_production(uuid),public.enable_production(uuid) to anon;
 -- No grants on private records, runner commands, episode jobs, permit records,
 -- cast/episode writes, membership writes, or privileged production operations.
+-- Keep the owner-checked privileged operation in the private schema; expose
+-- only an invoker wrapper, consistent with the other guarded client RPCs.
+alter function public.enable_production(uuid) set schema family_private;
+create function public.enable_production(fid uuid) returns void
+language sql security invoker set search_path='' as $$
+ select family_private.enable_production(fid)
+$$;
+revoke all on function public.enable_production(uuid) from public;
+grant execute on function public.enable_production(uuid) to anon,authenticated,service_role;
 commit;
