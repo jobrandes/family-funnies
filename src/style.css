@@ -3,3 +3,16 @@
 
 /* 16px minimum stops iOS Safari zooming the page whenever a field is focused. */
 input,select,textarea{font-size:16px}
+/* Mobile polish: scroll hint on the family tabs, tidy upload control, photo thumbnails. */
+.tabs{background:linear-gradient(90deg,#faf5eb 45%,#faf5eb00) 0 0/30px 100% no-repeat local,linear-gradient(270deg,#faf5eb 45%,#faf5eb00) 100% 0/30px 100% no-repeat local,linear-gradient(90deg,#42283e33,#42283e00) 0 0/14px 100% no-repeat scroll,linear-gradient(270deg,#42283e33,#42283e00) 100% 0/14px 100% no-repeat scroll}
+@media(max-width:480px){.tabs button{padding:10px 7px}}
+.notice>:last-child{margin-bottom:0}.notice>:first-child{margin-top:0}
+.upload{position:relative;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px}
+.upload .upload-button{display:inline-flex;align-items:center;min-height:44px;padding:10px 16px;border:1px solid #7a4c4f;border-radius:9px;color:#42233b;font-weight:600;cursor:pointer}
+.upload input[type=file]{position:absolute;inline-size:1px;block-size:1px;opacity:0;padding:0;margin:0;overflow:hidden}
+.upload:focus-within .upload-button{outline:2px solid #b75434;outline-offset:2px}
+.upload.is-disabled .upload-button{opacity:.55;cursor:default}
+.reference-list{margin-top:10px}.reference-list>span{padding:4px 0 4px 4px;gap:2px}
+.reference-list .thumb{display:block;width:52px;height:52px;flex:none;object-fit:cover;border-radius:6px;background:#e4dccd}
+.reference-list button{min-width:44px;min-height:44px;font-size:18px}
+
