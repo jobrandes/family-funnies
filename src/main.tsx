@@ -648,12 +648,12 @@ function Login({
             makes them who they are. Pets count.
           </li>
           <li>
-            <strong>Approve the cast.</strong> Everyone’s cartoon look is ready
-            the next morning. Nothing runs until you say yes.
+            <strong>Approve the cast.</strong> Everyone’s cartoon look is ready,
+            usually within the hour. Nothing runs until you say yes.
           </li>
           <li>
-            <strong>Wake up to a comic.</strong> A fresh one each morning after
-            that, for your family to read and share.
+            <strong>Wake up to a comic.</strong> Your first arrives soon after you
+            approve, then a fresh one each morning for your family to read and share.
           </li>
         </ol>
         <p className="home-privacy">
@@ -1421,20 +1421,20 @@ function Cast({
             Saving people and reference photos queues the latest look for a cast
             preview.
           </p>
-          <p className="badge">{!people.data.length?'Add your first cast member':withoutPhotos.length?'Add a photo for each cast member':'Queued for the next cast check'}</p>
+          <p className="badge">{!people.data.length?'Add your first cast member':withoutPhotos.length?'Add a photo for each cast member':'Queued for the next hourly cast check'}</p>
           {!!withoutPhotos.length&&<p>Still need photos: {withoutPhotos.map(p=>p.name).join(', ')}</p>}
         </section>
       )}
       <p className="muted">
         {ready
-          ? "This look is approved. If you change people or photos, a new preview is prepared around 7 a.m. Pacific for you to review."
-          : "Cast previews are prepared each morning around 7 a.m. Pacific. Come back to review yours before starting daily comics."}
+          ? "This look is approved. If you change people or photos, a new preview is prepared at the next hourly check (7 a.m. to 9 p.m. Pacific) for you to review."
+          : "Cast previews are prepared every hour from 7 a.m. to 9 p.m. Pacific. Come back to review yours before starting daily comics."}
       </p>
       {jobs.data
         .filter((j) => j.visual_revision === family.visual_revision)
         .map((j) => (
           <p key={j.id}>
-            {j.state==='processing'?'Your cast preview is being drawn.':j.state==='ready'?ready?'Your cast is approved.':current?'Your cast preview is ready to review.':'Your latest cast work is saved.':j.state==='failed'?'We couldn’t finish your cast preview. Check your reference photos; the next morning check can retry while attempts remain.':'Your latest photos and details are saved for the next morning cast check.'}
+            {j.state==='processing'?'Your cast preview is being drawn.':j.state==='ready'?ready?'Your cast is approved.':current?'Your cast preview is ready to review.':'Your latest cast work is saved.':j.state==='failed'?'We couldn’t finish your cast preview. Check your reference photos; the next hourly check can retry while attempts remain.':'Your latest photos and details are saved for the next morning cast check.'}
           </p>
         ))}
     </>
@@ -1625,7 +1625,7 @@ function Settings({
           </button>
         )}
         <p className="muted">
-          {mirroredFamilies.has(family.id)?'This family’s comics arrive each morning from your original Family Funnies collection.':'After approving your cast, choose Start daily comics on the Cast tab. Comics are generated each morning around 8 a.m. Pacific and appear after generation finishes.'}
+          {mirroredFamilies.has(family.id)?'This family’s comics arrive each morning from your original Family Funnies collection.':'After approving your cast, choose Start daily comics on the Cast tab. Your first comic is made at the next hourly check (7 a.m. to 9 p.m. Pacific). After that, a new one arrives each morning around 8 a.m. Pacific.'}
         </p>
         <div className="danger-zone"><h3>Remove this family</h3><p>Move this family to your Trash. It disappears from everyone’s bookshelf and new production stops. A family manager can restore it from My families.</p>{!deleting?<button className="quiet" onClick={()=>setDeleting(true)}>Move family to Trash</button>:<form onSubmit={e=>{e.preventDefault();void run(async()=>{await rpc('trash_family',{fid:family.id,confirmation});await onChange()})}}><label>Type {family.name} to confirm<input value={confirmation} onChange={e=>setConfirmation(e.target.value)}/></label><button className="danger" disabled={busy||confirmation!==family.name}>Move to Trash</button><button type="button" className="quiet" disabled={busy} onClick={()=>setDeleting(false)}>Cancel</button></form>}</div>
       </section>
