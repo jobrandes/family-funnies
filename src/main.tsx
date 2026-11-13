@@ -766,7 +766,7 @@ function SampleComic() {
         src="/sample-comic.webp"
         width={1200}
         height={800}
-        alt="Sample comic strip about a made-up family and their dog"
+        alt="Sample three-panel comic. A mum and daughter decide to teach the family dog to put his toys away. The dog drops a ball in Dad’s hand. In the end the humans tidy the toys while the dog lounges on the sofa, and Mum says he has trained the whole family."
         onLoad={() => setState("ready")}
         onError={() => setState("missing")}
       />
