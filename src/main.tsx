@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, type FormEvent } from "react";
 import { createRoot } from "react-dom/client";
 import { AutoTextarea } from "./auto-textarea";
+import { withShareFooter } from "./share-image";
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -841,7 +842,7 @@ function Comics({ id, onError }: { id: string; onError: (s: string) => void }) {
         if (signed.error) throw signed.error;
         const response = await fetch(signed.data.signedUrl);
         if (!response.ok) throw new Error("This comic could not be prepared for sharing. Please try again.");
-        const blob = await response.blob();
+        const blob = await withShareFooter(await response.blob());
         const type = /^image\/(png|jpeg|webp)$/.test(blob.type) ? blob.type : "image/png";
         const name = (String(c.title).replace(/[^\p{L}\p{N} _-]+/gu, "").trim().slice(0, 60) || "Family comic") + " " + c.day + "." + type.slice(6).replace("jpeg", "jpg");
         file = new File([blob], name, { type });
