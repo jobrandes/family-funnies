@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, type FormEvent } from "react";
 import { createRoot } from "react-dom/client";
+import { AutoTextarea } from "./auto-textarea";
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
@@ -363,7 +364,13 @@ function App() {
                       key={t}
                       className={tab === t ? "active" : ""}
                       aria-current={tab === t ? "page" : undefined}
-                      onClick={() => setTab(t)}
+                      onClick={(e) => {
+                        // Slide the chosen tab into view sideways only; never move the page.
+                        const b = e.currentTarget, n = b.parentElement!;
+                        const left = b.getBoundingClientRect().left - n.getBoundingClientRect().left + n.scrollLeft;
+                        n.scrollTo({ left: left - (n.clientWidth - b.offsetWidth) / 2, behavior: "smooth" });
+                        setTab(t);
+                      }}
                     >
                       {t}
                     </button>
@@ -619,7 +626,8 @@ function Login({
           you love.
         </p>
         <p className="muted">
-          Just reading? Use the family link you were sent—no account needed.
+          Invited to read a family’s comics? Open your invitation link, then
+          sign in or create an account.
         </p>
       </div>
       <form className="paper" onSubmit={submit}>
@@ -628,9 +636,8 @@ function Login({
             ? "Start your collection"
             : mode === "reset"
               ? "Reset your password"
-              : "Welcome back"}
+              : "Sign in"}
         </h2>
-        <p>No ChatGPT account needed.</p>
         {invited && (
           <div className="notice">
             <strong>You have a family invitation.</strong>
@@ -717,10 +724,12 @@ function PrivateImage({
   bucket,
   path,
   alt,
+  compact,
 }: {
   bucket: string;
   path: string;
   alt: string;
+  compact?: boolean;
 }) {
   const [src, setSrc] = useState(""),
     [error, setError] = useState(false);
@@ -739,6 +748,12 @@ function PrivateImage({
       active = false;
     };
   }, [bucket, path]);
+  if (compact)
+    return src ? (
+      <img className="thumb" src={src} alt={alt} loading="lazy" />
+    ) : (
+      <span className="thumb" role="img" aria-label={error ? "Photo unavailable" : "Opening photo"} />
+    );
   return error ? (
     <p>Image unavailable. Reopen this page to try again.</p>
   ) : src ? (
@@ -891,7 +906,7 @@ function People({
     <>
       <div className="section-heading">
         <div>
-          <h2>{stage==='photos'?'A reference for everyone':'The people behind the punchlines'}</h2>
+          {stage!=='members'&&<h2>{stage==='photos'?'A reference for everyone':'The people behind the punchlines'}</h2>}
           <p>
             Start with a photo and a few details. You can add the rest later.
           </p>
@@ -977,7 +992,7 @@ function People({
             </label>
             {stage!=='members'&&<><label>
               Appearance & clothes
-              <textarea
+              <AutoTextarea
                 name="appearance"
                 defaultValue={editing.appearance}
                 placeholder="Favorite outfit, hairstyle, one upright ear…"
@@ -985,7 +1000,7 @@ function People({
             </label>
             <label>
               What are they like?
-              <textarea
+              <AutoTextarea
                 name="personality"
                 defaultValue={editing.personality}
                 placeholder="The planner? The quiet comedian?"
@@ -993,7 +1008,7 @@ function People({
             </label>
             <label>
               Habits & favorite sayings
-              <textarea
+              <AutoTextarea
                 name="habits"
                 defaultValue={editing.habits}
                 placeholder="What does everyone recognize about them?"
@@ -1001,11 +1016,11 @@ function People({
             </label>
             <label>
               Things they enjoy
-              <textarea name="interests" defaultValue={editing.interests} />
+              <AutoTextarea name="interests" defaultValue={editing.interests} />
             </label>
             <label>
               Keep out of the jokes
-              <textarea name="boundaries" defaultValue={editing.boundaries} />
+              <AutoTextarea name="boundaries" defaultValue={editing.boundaries} />
             </label></>}
           </div>
           {emails && (
@@ -1103,8 +1118,9 @@ function People({
               </button>}
               {stage!=='members'&&<>
               <GooglePhotos familyId={id} personId={p.id} remaining={6-refs.length} onSaved={saved}/>
-              <label className="upload">
-                Add reference photos · {refs.length}/6
+              <label className={"upload"+(busy || refs.length >= 6?" is-disabled":"")}>
+                <span className="upload-label">Reference photos · {refs.length}/6</span>
+                <span className="upload-button">{refs.length >= 6 ? "Six photos saved" : "＋ Upload photos"}</span>
                 <input
                   type="file"
                   accept="image/jpeg,image/png,image/webp"
@@ -1168,7 +1184,7 @@ function People({
               <div className="reference-list">
                 {refs.map((r, i) => (
                   <span key={r.id}>
-                    Photo {i + 1}
+                    <PrivateImage compact bucket="family-references" path={r.object_path} alt={`Photo ${i + 1} of ${p.name}`} />
                     <button
                       className="quiet"
                       disabled={busy}
@@ -1246,7 +1262,7 @@ function StoryJar({ id, run, busy }: { id: string } & Runner) {
       >
         <label>
           What made you smile?
-          <textarea
+          <AutoTextarea
             required
             maxLength={4000}
             name="text"
@@ -1355,7 +1371,9 @@ function Cast({
         </section>
       )}
       <p className="muted">
-        Cast previews are prepared each morning around 7 a.m. Pacific. Come back to review the draft before starting daily comics.
+        {ready
+          ? "This look is approved. If you change people or photos, a new preview is prepared around 7 a.m. Pacific for you to review."
+          : "Cast previews are prepared each morning around 7 a.m. Pacific. Come back to review yours before starting daily comics."}
       </p>
       {jobs.data
         .filter((j) => j.visual_revision === family.visual_revision)
@@ -1418,11 +1436,11 @@ function Settings({
         </label>
         <label>
           How everyone fits together
-          <textarea name="relationships" defaultValue={family.relationships} />
+          <AutoTextarea name="relationships" defaultValue={family.relationships} />
         </label>
         <label>
           Humor boundaries
-          <textarea name="boundaries" defaultValue={family.boundaries} />
+          <AutoTextarea name="boundaries" defaultValue={family.boundaries} />
         </label>
         <label>
           Comic tone
@@ -1430,7 +1448,7 @@ function Settings({
         </label>
         <label>
           Anything to adjust in the cast?
-          <textarea name="cast_notes" defaultValue={family.cast_notes} />
+          <AutoTextarea name="cast_notes" defaultValue={family.cast_notes} />
         </label>
         <p className="muted">
           Visual changes queue a new preview for your approval.
@@ -1529,14 +1547,14 @@ function Settings({
         <hr />
         <h3>Comics without an account</h3>
         <p>
-          Guest comic links are still being connected in this new app. Existing
-          shared links continue to work.
+          Reading without an account isn’t available yet. For now, invite
+          someone as a Reader above, or use Share on any comic to send them the
+          picture.
         </p>
         <hr />
-        <h3>Morning production</h3>
+        <h3>Daily comics</h3>
         <p>
-          {mirroredFamilies.has(family.id)?'Daily delivery from original app':family.production_enabled ? "Enabled" : "Paused"} ·
-          America/Los_Angeles
+          {mirroredFamilies.has(family.id)?'Arriving every morning':family.production_enabled ? "On" : "Paused"} · Pacific time
         </p>
         {family.production_enabled && (
           <button
@@ -1548,11 +1566,11 @@ function Settings({
               })
             }
           >
-            Pause production
+            Pause daily comics
           </button>
         )}
         <p className="muted">
-          {mirroredFamilies.has(family.id)?'This collection receives its daily comics from the original app.':'After approving your cast, choose Start daily comics on the Cast tab. Comics are generated each morning around 8 a.m. Pacific and appear after generation finishes.'}
+          {mirroredFamilies.has(family.id)?'This family’s comics arrive each morning from your original Family Funnies collection.':'After approving your cast, choose Start daily comics on the Cast tab. Comics are generated each morning around 8 a.m. Pacific and appear after generation finishes.'}
         </p>
         <div className="danger-zone"><h3>Remove this family</h3><p>Move this family to your Trash. It disappears from everyone’s bookshelf and new production stops. A family manager can restore it from My families.</p>{!deleting?<button className="quiet" onClick={()=>setDeleting(true)}>Move family to Trash</button>:<form onSubmit={e=>{e.preventDefault();void run(async()=>{await rpc('trash_family',{fid:family.id,confirmation});await onChange()})}}><label>Type {family.name} to confirm<input value={confirmation} onChange={e=>setConfirmation(e.target.value)}/></label><button className="danger" disabled={busy||confirmation!==family.name}>Move to Trash</button><button type="button" className="quiet" disabled={busy} onClick={()=>setDeleting(false)}>Cancel</button></form>}</div>
       </section>
