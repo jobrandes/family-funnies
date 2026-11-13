@@ -449,16 +449,16 @@ function FamilyShelves({
     let active = true;
     setDetails(null);
     if (!families.length) return;
-    Promise.all([rows("people"), rows("cast_versions"), rows("episodes", undefined, EPISODE_LIST),rows('cast_jobs')])
+    const load=()=>Promise.all([rows("people"), rows("cast_versions"), rows("episodes", undefined, EPISODE_LIST),rows('cast_jobs')])
       .then(([people, casts, episodes,jobs]) => {
         if (active) setDetails({ people, casts, episodes,jobs });
       })
       .catch((e) => {
         if (active) onError(errorText(e));
       });
-    return () => {
-      active = false;
-    };
+    void load();
+    const timer=setInterval(()=>{if(document.visibilityState==='visible')void load()},15000);
+    return () => { active=false;clearInterval(timer); };
   }, [families]);
   const today = new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Los_Angeles",
@@ -466,7 +466,13 @@ function FamilyShelves({
     month: "2-digit",
     day: "2-digit",
   }).format(new Date());
-  return (
+  const reviewFamilies=families.filter(f=>{
+    if(mirroredFamilies.has(f.id)||!memberships.some(m=>m.family_id===f.id&&m.actor_id===actor&&m.role==='owner'))return false;
+    const cast=details?.casts.filter(c=>c.family_id===f.id).sort((a,b)=>b.created_at.localeCompare(a.created_at))[0];
+    return !!cast&&cast.visual_revision===f.visual_revision&&!cast.approved_at&&!cast.missing?.length;
+  });
+  return (<>
+    {!!reviewFamilies.length&&<aside className="cast-review-notice" role="status" aria-live="polite"><strong>Your updated cast is ready!</strong><p>Review your family’s new look. {reviewFamilies.some(f=>f.production_enabled)?'Daily comics continue with the previously approved cast.':'Approve your cast to start daily comics.'}</p>{reviewFamilies.map(f=><button key={f.id} onClick={()=>open(f.id,'Cast')}>Review &amp; approve: {f.name} →</button>)}</aside>}
     <section className="shelves-grid" aria-label="Your families">
       {families.map((f) => {
         const people =
@@ -514,8 +520,9 @@ function FamilyShelves({
                   "shelf-badge " + (latest?.day === today ? "new" : "")
                 }
               >
-                {!details?"Opening collection…":familyStatus(f,cast,job,latest,today,role)}
+                {!details?"Opening collection…":familyStatus(f,cast,job,latest,today,role,mirroredFamilies.has(f.id))}
               </span>
+              {role==='owner'&&!mirroredFamilies.has(f.id)&&cast?.visual_revision===f.visual_revision&&!cast?.approved_at&&!cast?.missing?.length&&<div role="status" className="paper"><strong>Your new cast is ready to review.</strong><p>{f.production_enabled?'Your daily comics continue with the approved cast until you accept this update.':'Review the preview to start your daily comics.'}</p><button onClick={()=>open(f.id,"Cast")}>Review cast →</button></div>}
               <p className="shelf-latest">
                 {latest ? (
                   <>
@@ -541,7 +548,7 @@ function FamilyShelves({
           </article>
         );
       })}
-    </section>
+    </section></>
   );
 }
 function VerifyEmail({user,onVerified}:{user:User;onVerified:(user:User)=>void}){
@@ -1404,12 +1411,13 @@ function Cast({
               onClick={() =>
                 void run(async () => {
                   await rpc("approve_cast", { cast_id: cast.id });
+                  if(!family.production_enabled&&!mirroredFamilies.has(family.id))await rpc('enable_production',{fid:family.id});
                   await casts.refresh();
                   await onChange();
                 })
               }
             >
-              Approve this cast
+              {mirroredFamilies.has(family.id)?'Approve this cast':family.production_enabled?'Use this updated cast':'Approve cast & start daily comics'}
             </button>
           )}
           {owner&&ready&&!mirroredFamilies.has(family.id)&&!family.production_enabled&&<button disabled={busy} onClick={()=>void run(async()=>{await rpc('enable_production',{fid:family.id});await onChange()})}>Start daily comics</button>}

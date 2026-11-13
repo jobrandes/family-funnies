@@ -33,3 +33,5 @@ input,select,textarea{font-size:16px}
 .login-layout.home form{position:sticky;top:24px;scroll-margin-top:16px}
 @media(max-width:800px){.login-layout.home{gap:36px}.home-actions{display:flex}.login-layout.home form{position:static}.login-layout.home.invited form{order:-1}.login-layout.home.invited .home-actions{display:none}}
 @media(max-width:480px){.home-lede{font-size:17px}}
+
+.cast-review-notice{padding:1.4rem;margin:0 0 1.5rem;border:3px solid #b55431;border-radius:18px;background:#fff0cf;box-shadow:0 5px 0 #e2d2b9}.cast-review-notice>strong{display:block;font-size:1.4rem;color:#452438}.cast-review-notice button{display:block;margin-top:.7rem;min-height:48px;width:100%}

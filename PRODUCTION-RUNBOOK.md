@@ -51,3 +51,11 @@ Call `runner_cast_queue()` at the start and end of every cast run. It recovers e
 Unclaimed work remains due; a run that leaves eligible jobs unattempted must report RUN INCOMPLETE and the concrete reason. Work pending over two hours must be reported as overdue. These database guarantees preserve retry eligibility and prevent duplicate publication; the ChatGPT automation remains the image-generation executor. The app cannot itself invoke the built-in ChatGPT image tool. A schedule or normal automation completion label is not proof of successful generation.
 
 `tests/cast-retry.sql` verifies backoff, retries beyond three failures, expired-worker recovery, rejection of stale claims, ready-job duplicate prevention and restricted queue access in a rollback transaction.
+
+## Cast continuity (prepared November 13, 2026)
+
+After applying `database/cast-continuity.sql`, additions, reference-photo changes and appearance updates leave the family's existing production opt-in unchanged. The runner selects the latest complete approved cast and returns approvedCastId when claiming an episode. Download and inspect THAT approved image; use only its approved characters. Newly added characters wait until the manager approves their replacement cast. Never treat the unapproved preview as approved. The episode claim pins approvedCastId; a different approval arriving during generation invalidates completion. Profiles/revision changes still invalidate the in-flight claim.
+
+Explicitly paused families stay paused. Removing a person or changing their name, kind or memorial status pauses production for review. Initial setup still requires owner approval and production opt-in. The app combines those initial owner choices into one clearly labelled Approve cast & start daily comics button, and shows an owner-only review notice on the home shelf. Existing mirrored collections continue using original-Site delivery.
+
+Update both generation automation prompts after deployment: independently enabled families qualify with ANY complete approved cast, while runner_command still takes the family's current visual revision. Use returned approvedCastId for the episode. Never require the latest unapproved replacement to be approved before continuing the previous cast. Preserve all family privacy, memorial and duplicate-day guards.
