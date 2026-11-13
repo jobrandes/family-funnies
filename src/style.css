@@ -16,3 +16,20 @@ input,select,textarea{font-size:16px}
 .reference-list .thumb{display:block;width:52px;height:52px;flex:none;object-fit:cover;border-radius:6px;background:#e4dccd}
 .reference-list button{min-width:44px;min-height:44px;font-size:18px}
 
+
+/* Signed-out home page. */
+.login-layout.home{align-items:start;gap:64px}
+.home-lede{font-size:19px;max-width:34em}
+.home-sample{margin:26px 0 0}.home-sample[hidden]{display:none}
+.home-sample img{width:100%;height:auto;border:1px solid #decebd;border-radius:14px;background:#fffdf8;box-shadow:0 10px 26px #42283e1f}
+.home-sample figcaption{font-size:13px;color:#88787a;margin-top:8px}
+.home-actions{display:none;gap:10px;margin-top:24px}
+.home-actions button{flex:1;margin:0;width:auto}
+.home-steps-title{margin-top:40px}
+.home-steps{list-style:none;counter-reset:step;padding:0;margin:14px 0 0;display:grid;gap:14px}
+.home-steps li{counter-increment:step;position:relative;padding-left:46px;min-height:32px}
+.home-steps li::before{content:counter(step);position:absolute;left:0;top:0;width:32px;height:32px;display:grid;place-items:center;border-radius:50%;background:#b75434;color:#fff;font-weight:700;font-size:14px}
+.home-privacy{margin-top:28px;padding:16px 18px;border:1px solid #daceb6;border-radius:12px;background:#f1ecdd}
+.login-layout.home form{position:sticky;top:24px;scroll-margin-top:16px}
+@media(max-width:800px){.login-layout.home{gap:36px}.home-actions{display:flex}.login-layout.home form{position:static}.login-layout.home.invited form{order:-1}.login-layout.home.invited .home-actions{display:none}}
+@media(max-width:480px){.home-lede{font-size:17px}}

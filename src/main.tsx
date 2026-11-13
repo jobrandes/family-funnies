@@ -612,25 +612,60 @@ function Login({
       } else await signInWithEmailAndPassword(auth!, email, password);
     });
   }
+  const formRef = useRef<HTMLFormElement>(null);
+  function toForm(next: "signup" | "signin") {
+    setMode(next);
+    setMessage("");
+    const form = formRef.current;
+    if (!form) return;
+    const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    form.scrollIntoView({ behavior: calm ? "auto" : "smooth", block: "start" });
+    form.querySelector<HTMLInputElement>('input[name="email"]')?.focus({ preventScroll: true });
+  }
   return (
-    <section className="login-layout">
-      <div>
+    <section className={"login-layout home"+(invited?" invited":"")}>
+      <div className="home-pitch">
         <p className="eyebrow">Made for your people</p>
         <h1>
           Your family.
           <br />
           Your funny pages.
         </h1>
-        <p>
-          Create a cast, collect your comics, and share a smile with the people
-          you love.
+        <p className="home-lede">
+          A new comic every morning, starring the people and pets you love.
+          Drawn by AI from the photos and little stories you share.
+        </p>
+        <SampleComic />
+        <div className="home-actions">
+          <button type="button" onClick={() => toForm("signup")}>Start your family</button>
+          <button type="button" className="secondary" onClick={() => toForm("signin")}>Sign in</button>
+        </div>
+        <h2 className="home-steps-title">How it works</h2>
+        <ol className="home-steps">
+          <li>
+            <strong>Add your people.</strong> Names, a photo or two, and what
+            makes them who they are. Pets count.
+          </li>
+          <li>
+            <strong>Approve the cast.</strong> Everyone’s cartoon look is ready
+            the next morning. Nothing runs until you say yes.
+          </li>
+          <li>
+            <strong>Wake up to a comic.</strong> A fresh one each morning after
+            that, for your family to read and share.
+          </li>
+        </ol>
+        <p className="home-privacy">
+          <strong>Private to your family.</strong> You choose who is invited.
+          Your photos and stories are never sold and never used for ads.{" "}
+          <a href="/privacy.html">How we handle them</a>
         </p>
         <p className="muted">
           Invited to read a family’s comics? Open your invitation link, then
           sign in or create an account.
         </p>
       </div>
-      <form className="paper" onSubmit={submit}>
+      <form className="paper" id="account" ref={formRef} onSubmit={submit}>
         <h2>
           {mode === "signup"
             ? "Start your collection"
@@ -719,6 +754,25 @@ function useRows(table: string, id: string, columns?: string) {
     void refresh();
   }, [table, id, columns]);
   return { data, error, loading, refresh };
+}
+// The sample comic is a picture of an invented family. It appears only once
+// public/sample-comic.webp exists, so the page never shows a broken image.
+function SampleComic() {
+  const [state, setState] = useState<"loading" | "ready" | "missing">("loading");
+  if (state === "missing") return null;
+  return (
+    <figure className="home-sample" hidden={state !== "ready"}>
+      <img
+        src="/sample-comic.webp"
+        width={1200}
+        height={800}
+        alt="Sample comic strip about a made-up family and their dog"
+        onLoad={() => setState("ready")}
+        onError={() => setState("missing")}
+      />
+      <figcaption>A sample family we made up. Yours will star your people.</figcaption>
+    </figure>
+  );
 }
 function PrivateImage({
   bucket,
